@@ -15,7 +15,7 @@ import hmac
 import hashlib
 import json
 
-API_TOKEN = os.getenv("API_TOKEN", "8035474937:AAFon7PPDOQ3_LLLSSXEwHpfVyATcbEoBJk")
+API_TOKEN = os.getenv("API_TOKEN", "7397854780:AAHhIGSgxZSMU1GVIOA_6AQpsuLtF8JxZhA")  # توکن جدیدت رو اینجا بذار
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "your_api_key")
 IPN_SECRET = os.getenv("IPN_SECRET", "your_ipn_secret")
 ADMIN_ID = None
