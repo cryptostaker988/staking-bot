@@ -15,7 +15,7 @@ import hmac
 import hashlib
 import json
 
-API_TOKEN = os.getenv("API_TOKEN", "8035474937:AAHoXggpaaEZbxpYJi_rAPSkYr_HMWhuxy4")
+API_TOKEN = os.getenv("API_TOKEN", "8035474937:AAFon7PPDOQ3_LLLSSXEwHpfVyATcbEoBJk")
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "your_api_key")
 IPN_SECRET = os.getenv("IPN_SECRET", "your_ipn_secret")
 ADMIN_ID = None
@@ -758,26 +758,29 @@ async def referral_link(message: types.Message):
 
 @dispatcher.message(DepositState.selecting_currency)
 async def process_deposit_currency(message: types.Message, state: FSMContext):
+    currency_map = {"Deposit USDT": "USDT", "Deposit TRX": "TRX"}
     if message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
         await state.clear()
         return
-    
-    currency_map = {"Deposit USDT": "USDT", "Deposit TRX": "TRX"}
-    if message.text not in currency_map:
+    elif message.text in currency_map:
+        currency = currency_map[message.text]
+        await state.update_data(currency=currency)
+        await message.reply(f"Please enter the amount of {currency} to deposit:", reply_markup=main_menu)
+        await state.set_state(DepositState.waiting_for_amount)
+    else:
         await message.reply("Please select a valid currency.", reply_markup=deposit_currency_menu)
-        return
-    
-    currency = currency_map[message.text]
-    await state.update_data(currency=currency)
-    await message.reply(f"Please enter the amount of {currency} to deposit:", reply_markup=main_menu)
-    await state.set_state(DepositState.waiting_for_amount)
 
 @dispatcher.message(DepositState.waiting_for_amount)
 async def process_deposit_amount(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     data = await state.get_data()
     currency = data["currency"]
+    
+    if message.text == "Back to Main Menu":
+        await message.reply("Returning to main menu.", reply_markup=main_menu)
+        await state.clear()
+        return
     
     try:
         amount = float(message.text)
