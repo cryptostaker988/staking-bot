@@ -397,12 +397,13 @@ async def generate_payment_address(user_id, amount, currency):
     async with aiohttp.ClientSession() as session:
         async with session.post("https://api.nowpayments.io/v1/payment", json=payload, headers=headers) as resp:
             data = await resp.json()
-            logging.info(f"NOWPayments response: {data}")  # لاگ برای دیباگ
+            logging.info(f"NOWPayments response: {data}")
             if "pay_address" in data:
                 return data["pay_address"]
             else:
-                logging.error(f"Error from NOWPayments: {data}")
-                raise Exception(f"Failed to get pay_address: {data.get('message', 'Unknown error')}")
+                error_msg = data.get("message", "Unknown error")
+                logging.error(f"Failed to get pay_address: {error_msg}")
+                return None
 
 # چک کردن آخرین درخواست برداشت
 async def check_last_withdrawal(user_id):
@@ -784,10 +785,12 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             await message.reply("Please enter a positive amount.", reply_markup=main_menu)
             return
         
-        # تولید آدرس واریز با NOWPayments
         address = await generate_payment_address(user_id, amount, currency)
-        await save_deposit_address(user_id, currency, address)
-        await message.reply(f"Please send {amount:.2f} {currency} to this address: {address}\nYour account will be credited automatically after confirmation.", reply_markup=main_menu)
+        if address:
+            await save_deposit_address(user_id, currency, address)
+            await message.reply(f"Please send {amount:.2f} {currency} to this address: {address}\nYour account will be credited automatically after confirmation.", reply_markup=main_menu)
+        else:
+            await message.reply("Failed to generate deposit address. Please try again later.", reply_markup=main_menu)
         await state.clear()
     except ValueError:
         await message.reply("Invalid amount. Please enter a number.", reply_markup=main_menu)
