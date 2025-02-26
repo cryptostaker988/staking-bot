@@ -1006,13 +1006,19 @@ async def handle_invalid(message: types.Message):
 
 # تابع اصلی برای ربات
 async def main():
+    logging.info("Starting bot...")
     await initialize_database()
-    asyncio.create_task(schedule_reports())  # تسک برای گزارش‌ها
-    await dispatcher.start_polling(bot)  # اجرای ربات
+    asyncio.create_task(schedule_reports())
+    await dispatcher.start_polling(bot)
+    logging.info("Bot started polling.")
 
 # اجرا با حلقه مشترک
 if __name__ == "__main__":
     import aiohttp
+    logging.info("Initializing web app and bot...")
     loop = asyncio.get_event_loop()
-    loop.create_task(main())  # تسک برای ربات
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))  # وب‌هوک و حلقه اصلی
+    loop.create_task(main())
+    try:
+        web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    except Exception as e:
+        logging.error(f"Web app failed: {e}")
