@@ -392,12 +392,17 @@ async def generate_payment_address(user_id, amount, currency):
         "price_currency": currency.lower(),
         "pay_currency": currency.lower(),
         "order_id": str(user_id),
-        "ipn_callback_url": "https://ali-staking-bot.onrender.com/webhook"
+        "ipn_callback_url": "https://staking-bot.onrender.com/webhook"
     }
     async with aiohttp.ClientSession() as session:
         async with session.post("https://api.nowpayments.io/v1/payment", json=payload, headers=headers) as resp:
             data = await resp.json()
-            return data["pay_address"]
+            logging.info(f"NOWPayments response: {data}")  # لاگ برای دیباگ
+            if "pay_address" in data:
+                return data["pay_address"]
+            else:
+                logging.error(f"Error from NOWPayments: {data}")
+                raise Exception(f"Failed to get pay_address: {data.get('message', 'Unknown error')}")
 
 # چک کردن آخرین درخواست برداشت
 async def check_last_withdrawal(user_id):
