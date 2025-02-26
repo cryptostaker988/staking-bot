@@ -392,7 +392,7 @@ async def generate_payment_address(user_id, amount, currency):
         "price_currency": currency.lower(),
         "pay_currency": currency.lower(),
         "order_id": str(user_id),
-        "ipn_callback_url": "https://your-app-name.herokuapp.com/webhook"
+        "ipn_callback_url": "https://ali-staking-bot.onrender.com/webhook"
     }
     async with aiohttp.ClientSession() as session:
         async with session.post("https://api.nowpayments.io/v1/payment", json=payload, headers=headers) as resp:
@@ -1004,14 +1004,15 @@ async def process_new_address(message: types.Message, state: FSMContext):
 async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
+# تابع اصلی برای ربات
 async def main():
     await initialize_database()
-    asyncio.create_task(schedule_reports())  # شروع زمان‌بندی گزارش
-    await asyncio.gather(
-        dispatcher.start_polling(bot),
-        web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-    )
+    asyncio.create_task(schedule_reports())  # تسک برای گزارش‌ها
+    await dispatcher.start_polling(bot)  # اجرای ربات
 
-if __name__ == '__main__':
+# اجرا با حلقه مشترک
+if __name__ == "__main__":
     import aiohttp
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())  # تسک برای ربات
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))  # وب‌هوک و حلقه اصلی
