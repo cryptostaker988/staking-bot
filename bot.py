@@ -1012,13 +1012,20 @@ async def main():
     await dispatcher.start_polling(bot)
     logging.info("Bot started polling.")
 
+# تابع برای وب‌هوک
+async def run_web():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 8000)))
+    await site.start()
+    logging.info("Web server started.")
+
 # اجرا با حلقه مشترک
 if __name__ == "__main__":
     import aiohttp
-    logging.info("Initializing web app and bot...")
+    logging.info("Initializing app...")
     loop = asyncio.get_event_loop()
-    loop.create_task(main())
     try:
-        web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-    except Exception as e:
-        logging.error(f"Web app failed: {e}")
+        loop.create_task(main())  # تسک ربات
+        loop.create_task(run_web())  # تسک وب‌هوک
+        loop.run_forever()  # حل
