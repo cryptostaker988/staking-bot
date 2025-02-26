@@ -1026,6 +1026,10 @@ if __name__ == "__main__":
     logging.info("Initializing app...")
     loop = asyncio.get_event_loop()
     try:
-        loop.create_task(main())  # تسک ربات
-        loop.create_task(run_web())  # تسک وب‌هوک
-        loop.run_forever()  # حل
+        loop.create_task(main())
+        loop.create_task(run_web())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logging.info("Shutting down...")
+    except Exception as e:
+        logging.error(f"Error: {e}")
