@@ -16,11 +16,11 @@ import hashlib
 import json
 
 API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
-logging.info(f"Bot initialized with token: {API_TOKEN}")
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "your_api_key")
 IPN_SECRET = os.getenv("IPN_SECRET", "your_ipn_secret")
 ADMIN_ID = None
 logging.basicConfig(level=logging.INFO)
+logging.info(f"Bot initialized with token: {API_TOKEN}")
 
 bot = Bot(token=API_TOKEN)
 dispatcher = Dispatcher()
