@@ -793,7 +793,8 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
         address = await generate_payment_address(user_id, amount, currency)
         if address:
             await save_deposit_address(user_id, currency, address)
-            await message.reply(f"Please send {amount:.2f} {currency} to this address: {address}\nYour account will be credited automatically after confirmation.", reply_markup=main_menu)
+            await message.reply(f"Please send {amount:.2f} {currency} to this address (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+            await message.reply(address)  # آدرس توی پیام جدا
         else:
             await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
         await state.clear()
