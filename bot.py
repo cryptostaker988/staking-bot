@@ -605,19 +605,32 @@ async def handle_webhook(request):
 
     computed_sig = hmac.new(IPN_SECRET.encode(), body.encode(), hashlib.sha512).hexdigest()
     if computed_sig != signature:
+        logging.error(f"Invalid signature: received={signature}, computed={computed_sig}")
         return web.Response(text="Invalid signature", status=403)
 
+    logging.info(f"Webhook received: {data}")
+
+    # فقط اگه وضعیت پرداخت تأیید شده باشه ادامه بده
+    status = data.get("payment_status")
+    if status not in ["confirmed", "finished"]:
+        logging.info(f"Payment status '{status}' not confirmed yet, skipping.")
+        return web.Response(text="Success")
+
     user_id = int(data.get("order_id"))
-    amount = float(data["payment_amount"])
-    currency = data["pay_currency"].upper()
+    # مدیریت کلیدهای مختلف برای مقدار پرداخت
+    amount = data.get("actually_paid") or data.get("pay_amount") or data.get("price_amount")
+    if amount is None:
+        logging.error("No valid amount found in webhook data.")
+        return web.Response(text="No amount provided", status=400)
+    
+    amount = float(amount)
+    currency = data.get("pay_currency", "").upper()
 
     await update_balance(user_id, amount, currency)
     await add_transaction(user_id, "deposit", amount, currency)
     await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
 
     return web.Response(text="Success")
-
-app.router.add_post('/webhook', handle_webhook)
 
 # دستورات منوی آبی‌رنگ
 @dispatcher.message(Command("start"))
