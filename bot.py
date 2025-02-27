@@ -16,7 +16,7 @@ import hashlib
 import json
 
 API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
-NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "your_api_key")
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")  # کلید واقعی NOWPayments رو اینجا بذار
 IPN_SECRET = os.getenv("IPN_SECRET", "your_ipn_secret")
 ADMIN_ID = None
 logging.basicConfig(level=logging.INFO)
@@ -393,7 +393,7 @@ async def generate_payment_address(user_id, amount, currency):
         "price_currency": currency.lower(),
         "pay_currency": currency.lower(),
         "order_id": str(user_id),
-        "ipn_callback_url": "https://staking-bot.onrender.com/webhook"
+        "ipn_callback_url": "https://new-staking-bot.onrender.com/webhook"  # آدرس سرویس جدید
     }
     async with aiohttp.ClientSession() as session:
         async with session.post("https://api.nowpayments.io/v1/payment", json=payload, headers=headers) as resp:
@@ -794,7 +794,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             await save_deposit_address(user_id, currency, address)
             await message.reply(f"Please send {amount:.2f} {currency} to this address: {address}\nYour account will be credited automatically after confirmation.", reply_markup=main_menu)
         else:
-            await message.reply("Failed to generate deposit address. Please try again later.", reply_markup=main_menu)
+            await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
         await state.clear()
     except ValueError:
         await message.reply("Invalid amount. Please enter a number.", reply_markup=main_menu)
