@@ -16,7 +16,7 @@ import hashlib
 import json
 
 API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
-NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")  # کلید واقعی NOWPayments رو اینجا بذار
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
 IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
 ADMIN_ID = None
 logging.basicConfig(level=logging.INFO)
@@ -632,6 +632,8 @@ async def handle_webhook(request):
 
     return web.Response(text="Success")
 
+app.router.add_post('/webhook', handle_webhook)
+
 # دستورات منوی آبی‌رنگ
 @dispatcher.message(Command("start"))
 async def send_welcome(message: types.Message):
@@ -675,12 +677,15 @@ async def stake_command(message: types.Message, state: FSMContext):
 @dispatcher.message(Command("checkbalance"))
 async def check_balance_command(message: types.Message):
     user_id = message.from_user.id
+    username = message.from_user.username or "Unknown"
     user = await get_user(user_id)
-    if user:
-        balance_usdt, balance_trx = user[2], user[3]
-        await message.reply(f"Your balance: {balance_trx:,.2f} TRX and {balance_usdt:,.2f} USDT")
-    else:
-        await message.reply("User not found. Please start the bot.")
+    if not user:
+        # اگه کاربر توی دیتابیس نبود، ثبتش کن
+        await add_user(user_id, username)
+        user = await get_user(user_id)
+    
+    balance_usdt, balance_trx = user[2], user[3]
+    await message.reply(f"Your balance: {balance_trx:,.2f} TRX and {balance_usdt:,.2f} USDT")
 
 @dispatcher.message(Command("checkstaked"))
 async def check_staked_command(message: types.Message):
