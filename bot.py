@@ -385,6 +385,28 @@ async def save_deposit_address(user_id, currency, address):
         conn.commit()
         conn.close()
 
+# تولید آدرس واریز با NOWPayments
+async def generate_payment_address(user_id, amount, currency):
+    headers = {"x-api-key": NOWPAYMENTS_API_KEY}
+    payload = {
+        "price_amount": amount,
+        "price_currency": currency.lower(),
+        "pay_currency": currency.lower(),
+        "order_id": str(user_id),
+        "ipn_callback_url": "https://new-staking-bot.onrender.com/webhook"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://api.nowpayments.io/v1/payment", json=payload, headers=headers) as resp:
+            status = resp.status
+            data = await resp.json()
+            logging.info(f"NOWPayments request: status={status}, payload={payload}, response={data}")
+            if "pay_address" in data:
+                return data["pay_address"]
+            else:
+                error_msg = data.get("message", "Unknown error")
+                logging.error(f"Failed to get pay_address: {error_msg}, status={status}")
+                return None
+
 # چک کردن آخرین درخواست برداشت
 async def check_last_withdrawal(user_id):
     conn = await db_connect()
