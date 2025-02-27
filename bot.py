@@ -15,7 +15,7 @@ import hmac
 import hashlib
 import json
 
-API_TOKEN = os.getenv("API_TOKEN", "7397854780:AAEmJXwNXvK7hfF6v69Fmsf5elJ9qKBp5sI")
+API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
 logging.info(f"Bot initialized with token: {API_TOKEN}")
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "your_api_key")
 IPN_SECRET = os.getenv("IPN_SECRET", "your_ipn_secret")
