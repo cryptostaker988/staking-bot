@@ -405,10 +405,12 @@ async def save_deposit_address(user_id, currency, address):
 # تولید آدرس واریز با NOWPayments
 async def generate_payment_address(user_id, amount, currency):
     headers = {"x-api-key": NOWPAYMENTS_API_KEY}
+    # برای USDT از usdttrc20 استفاده می‌کنیم
+    pay_currency = "usdttrc20" if currency == "USDT" else currency.lower()
     payload = {
         "price_amount": amount,
         "price_currency": currency.lower(),
-        "pay_currency": currency.lower(),
+        "pay_currency": pay_currency,
         "order_id": str(user_id),
         "ipn_callback_url": "https://new-staking-bot.onrender.com/webhook"
     }
