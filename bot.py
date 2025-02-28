@@ -1099,8 +1099,8 @@ async def process_new_address(message: types.Message, state: FSMContext):
                        reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
-# مدیریت پیام‌های نامعتبر (فقط وقتی هیچ حالتی فعال نیست)
-@dispatcher.message(lambda message, state: asyncio.run_coroutine_threadsafe(state.get_state(), asyncio.get_event_loop()).result() is None)
+# مدیریت پیام‌های نامعتبر
+@dispatcher.message()
 async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
@@ -1125,12 +1125,12 @@ async def process_edit_balance(callback: types.CallbackQuery, state: FSMContext)
     await state.set_state(AdminState.waiting_for_edit_balance)
     await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 20 USDT'):")
     current_state = await state.get_state()
-    logging.info(f"State set to: {current_state}")  # لاگ برای دیباگ
+    logging.info(f"State set to: {current_state}")
     await callback.answer()
 
 @dispatcher.message(AdminState.waiting_for_edit_balance)
 async def edit_balance(message: types.Message, state: FSMContext):
-    logging.info(f"Received message in edit_balance: {message.text}")  # لاگ برای دیباگ
+    logging.info(f"Received message in edit_balance: {message.text}")
     try:
         parts = message.text.split()
         if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
