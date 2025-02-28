@@ -623,7 +623,7 @@ earnings_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# وب‌هوک برای NOWPayments (با پشتیبانی از پرداخت ناقص)
+# وب‌هوک برای NOWPayments
 async def handle_webhook(request):
     signature = request.headers.get("x-nowpayments-sig")
     body = await request.text()
@@ -651,27 +651,31 @@ async def handle_webhook(request):
     amount = float(amount)
     currency = data.get("pay_currency", "").upper()
 
-    # چک کردن حداقل واریز و کسر 10 درصد اگه کمتر باشه
+    # چک کردن حداقل واریز
     min_deposit = 40 if currency == "TRX" else 20 if currency == "USDT" else 0
     if amount < min_deposit:
         credited_amount = amount * 0.9  # کسر 10 درصد
         await update_balance(user_id, credited_amount, currency)
         await add_transaction(user_id, "deposit", credited_amount, currency)
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
+        # پیام به رفرال اگه واریز کمتر از حداقل باشه
+        user = await get_user(user_id)
+        if user and user[7]:  # ستون referrer_id (شاخص 7)
+            referrer_id = user[7]
+            await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.2f} {currency}, which is less than the minimum ({min_deposit} {currency}), no referral bonus was credited.")
     else:
         credited_amount = amount
         await update_balance(user_id, amount, currency)
         await add_transaction(user_id, "deposit", amount, currency)
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
-
-    # اضافه کردن بونوس رفرال (5 درصد) حتی برای پرداخت ناقص - برای تست
-    user = await get_user(user_id)
-    if user and user[7]:  # ستون referrer_id (شاخص 7)
-        referrer_id = user[7]
-        bonus_amount = credited_amount * 0.05  # 5 درصد از مبلغ نهایی
-        await update_balance(referrer_id, bonus_amount, currency)
-        await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
-        await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
+        # بونوس رفرال فقط برای واریزهای کامل
+        user = await get_user(user_id)
+        if user and user[7]:  # ستون referrer_id (شاخص 7)
+            referrer_id = user[7]
+            bonus_amount = credited_amount * 0.05  # 5 درصد از مبلغ نهایی
+            await update_balance(referrer_id, bonus_amount, currency)
+            await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
+            await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
 
     return web.Response(text="Success")
 
@@ -690,7 +694,7 @@ async def send_welcome(message: types.Message):
     if username.lower() == "kanka1":
         ADMIN_ID = user_id
         logging.info(f"Admin ID set to: {ADMIN_ID}")
-    await message.reply("Welcome to the Staking Bot! Choose an option:", reply_markup=main_menu)
+    await message.reply("Welcome to the Staking Bot! For each deposit by your referrals, 5% of their deposit will be added to your balance as a bonus. Choose an option:", reply_markup=main_menu)
 
 @dispatcher.message(Command("admin"))
 async def admin_panel(message: types.Message):
