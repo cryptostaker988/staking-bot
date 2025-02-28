@@ -16,7 +16,7 @@ import hashlib
 import json
 
 API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
-NOWPAYMENTS_API_KEYimetric = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
 IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
 ADMIN_ID = None
 logging.basicConfig(level=logging.INFO)
