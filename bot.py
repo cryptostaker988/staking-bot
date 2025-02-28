@@ -554,6 +554,8 @@ class EarningsState(StatesGroup):
 class AdminState(StatesGroup):
     waiting_for_add_admin_id = State()
     waiting_for_remove_admin_id = State()
+    waiting_for_edit_balance = State()  # اضافه شده
+    waiting_for_delete_user = State()   # اضافه شده
 
 # منوی اصلی با اموجی‌ها
 main_menu = ReplyKeyboardMarkup(
@@ -1054,7 +1056,7 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
     try:
         amount = float(message.text)
         if amount < min_withdraw:
-            await message.reply(f"Amount must be at least {min_withraw} {currency}.", reply_markup=main_menu)
+            await message.reply(f"Amount must be at least {min_withdraw} {currency}.", reply_markup=main_menu)
             return
         
         total_amount = amount + fee
@@ -1102,7 +1104,6 @@ async def process_new_address(message: types.Message, state: FSMContext):
 async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
-# مدیریت ادمین‌ها با دکمه‌های اینلاین
 # مدیریت ادمین‌ها با دکمه‌های اینلاین
 @dispatcher.callback_query(F.data == "view_users")
 async def process_view_users(callback: types.CallbackQuery):
@@ -1238,7 +1239,6 @@ async def confirm_remove_admin(callback: types.CallbackQuery):
         conn.close()
         await callback.message.reply(f"Admin with ID {admin_id} has been removed!")
     await callback.answer()
-
 
 # تابع اصلی برای ربات
 async def main():
