@@ -1103,24 +1103,80 @@ async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
 # مدیریت ادمین‌ها با دکمه‌های اینلاین
+# مدیریت ادمین‌ها با دکمه‌های اینلاین
 @dispatcher.callback_query(F.data == "view_users")
 async def process_view_users(callback: types.CallbackQuery):
-    await callback.message.reply("View Users clicked! This will show all users.")
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username FROM users")
+        users = cursor.fetchall()
+        conn.close()
+        if not users:
+            await callback.message.reply("No users found!")
+        else:
+            response = "Users:\n" + "\n".join(f"ID: {user[0]}, Username: @{user[1]}" for user in users)
+            await callback.message.reply(response)
     await callback.answer()
 
 @dispatcher.callback_query(F.data == "edit_balance")
-async def process_edit_balance(callback: types.CallbackQuery):
-    await callback.message.reply("Edit Balance clicked! This will allow balance editing.")
+async def process_edit_balance(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 20 USDT'):")
+    await state.set_state(AdminState.waiting_for_edit_balance)
     await callback.answer()
 
+@dispatcher.message(AdminState.waiting_for_edit_balance)
+async def edit_balance(message: types.Message, state: FSMContext):
+    try:
+        parts = message.text.split()
+        if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
+            raise ValueError
+        user_id = int(parts[0])
+        amount = float(parts[1])
+        currency = parts[2]
+        
+        if await update_balance(user_id, amount - (await get_user(user_id))[2 if currency == "USDT" else 3], currency):
+            await message.reply(f"Balance updated for user {user_id}: {amount} {currency}")
+        else:
+            await message.reply("Failed to update balance.")
+        await state.clear()
+    except ValueError:
+        await message.reply("Invalid input. Use format: 'user_id amount currency' (e.g., '123456 50 TRX')")
+
 @dispatcher.callback_query(F.data == "delete_user")
-async def process_delete_user(callback: types.CallbackQuery):
-    await callback.message.reply("Delete User clicked! This will delete a user.")
+async def process_delete_user(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.reply("Please enter the user ID to delete:")
+    await state.set_state(AdminState.waiting_for_delete_user)
     await callback.answer()
+
+@dispatcher.message(AdminState.waiting_for_delete_user)
+async def delete_user(message: types.Message, state: FSMContext):
+    try:
+        user_id = int(message.text)
+        conn = await db_connect()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM stakes WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM wallets WHERE user_id = ?", (user_id,))
+            conn.commit()
+            conn.close()
+            await message.reply(f"User with ID {user_id} has been deleted!")
+        await state.clear()
+    except ValueError:
+        await message.reply("Invalid ID. Please enter a number.")
 
 @dispatcher.callback_query(F.data == "stats")
 async def process_stats(callback: types.CallbackQuery):
-    await callback.message.reply("Bot Stats clicked! This will show bot statistics.")
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(user_id), SUM(balance_trx), SUM(balance_usdt) FROM users")
+        stats = cursor.fetchone()
+        conn.close()
+        user_count, total_trx, total_usdt = stats
+        await callback.message.reply(f"Bot Stats:\nUsers: {user_count}\nTotal TRX: {total_trx or 0:,.2f}\nTotal USDT: {total_usdt or 0:,.2f}")
     await callback.answer()
 
 @dispatcher.callback_query(F.data == "add_admin")
@@ -1182,6 +1238,7 @@ async def confirm_remove_admin(callback: types.CallbackQuery):
         conn.close()
         await callback.message.reply(f"Admin with ID {admin_id} has been removed!")
     await callback.answer()
+
 
 # تابع اصلی برای ربات
 async def main():
