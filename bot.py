@@ -249,7 +249,7 @@ async def update_earnings(user_id, earnings_change, currency):
                 if new_earnings < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET earnings_trx = ?, last_earing_update = ? WHERE user_id = ?", 
+                cursor.execute("UPDATE users SET earnings_trx = ?, last_earning_update = ? WHERE user_id = ?", 
                               (new_earnings, datetime.now(), user_id))
             conn.commit()
         conn.close()
@@ -1099,8 +1099,8 @@ async def process_new_address(message: types.Message, state: FSMContext):
                        reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
-# مدیریت پیام‌های نامعتبر
-@dispatcher.message()
+# مدیریت پیام‌های نامعتبر (فقط وقتی هیچ حالتی فعال نیست)
+@dispatcher.message(lambda message, state: asyncio.run_coroutine_threadsafe(state.get_state(), asyncio.get_event_loop()).result() is None)
 async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
