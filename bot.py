@@ -623,7 +623,7 @@ earnings_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# وب‌هوک برای NOWPayments (با پشتیبانی از رفرال)
+# وب‌هوک برای NOWPayments (با پشتیبانی از پرداخت ناقص)
 async def handle_webhook(request):
     signature = request.headers.get("x-nowpayments-sig")
     body = await request.text()
@@ -636,9 +636,9 @@ async def handle_webhook(request):
 
     logging.info(f"Webhook received: {data}")
 
-    # فقط اگه وضعیت پرداخت تأیید شده باشه ادامه بده
+    # پردازش پرداخت‌های confirmed، finished و partially_paid
     status = data.get("payment_status")
-    if status not in ["confirmed", "finished"]:
+    if status not in ["confirmed", "finished", "partially_paid"]:
         logging.info(f"Payment status '{status}' not confirmed yet, skipping.")
         return web.Response(text="Success")
 
@@ -659,15 +659,16 @@ async def handle_webhook(request):
         await add_transaction(user_id, "deposit", credited_amount, currency)
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
     else:
+        credited_amount = amount
         await update_balance(user_id, amount, currency)
         await add_transaction(user_id, "deposit", amount, currency)
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
 
-    # اضافه کردن بونوس رفرال (5 درصد)
+    # اضافه کردن بونوس رفرال (5 درصد) حتی برای پرداخت ناقص - برای تست
     user = await get_user(user_id)
     if user and user[7]:  # ستون referrer_id (شاخص 7)
         referrer_id = user[7]
-        bonus_amount = amount * 0.05  # 5 درصد از مبلغ دیپازیت
+        bonus_amount = credited_amount * 0.05  # 5 درصد از مبلغ نهایی
         await update_balance(referrer_id, bonus_amount, currency)
         await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
         await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
@@ -676,13 +677,12 @@ async def handle_webhook(request):
 
 app.router.add_post('/webhook', handle_webhook)
 
-# دستورات منوی آبی‌رنگ (تغییر /start برای رفرال)
+# دستورات منوی آبی‌رنگ
 @dispatcher.message(Command("start"))
 async def send_welcome(message: types.Message):
     global ADMIN_ID
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
-    # گرفتن آرگومان‌ها از متن پیام
     command_parts = message.text.split()
     referrer_id = int(command_parts[1]) if len(command_parts) > 1 and command_parts[1].isdigit() else None
     
@@ -701,7 +701,6 @@ async def admin_panel(message: types.Message):
         await message.reply("You are not an admin!")
         return
     
-    # منوی اینلاین برای ادمین (به انگلیسی)
     admin_menu = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="View Users", callback_data="view_users"),
          InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
