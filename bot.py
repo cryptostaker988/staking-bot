@@ -407,9 +407,10 @@ async def generate_payment_address(user_id, amount, currency):
     headers = {"x-api-key": NOWPAYMENTS_API_KEY}
     # برای USDT از usdttrc20 استفاده می‌کنیم
     pay_currency = "usdttrc20" if currency == "USDT" else currency.lower()
+    price_currency = "usdttrc20" if currency == "USDT" else currency.lower()
     payload = {
         "price_amount": amount,
-        "price_currency": currency.lower(),
+        "price_currency": price_currency,
         "pay_currency": pay_currency,
         "order_id": str(user_id),
         "ipn_callback_url": "https://new-staking-bot.onrender.com/webhook"
