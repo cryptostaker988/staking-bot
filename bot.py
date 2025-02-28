@@ -1131,6 +1131,34 @@ async def edit_balance(message: types.Message, state: FSMContext):
     try:
         parts = message.text.split()
         if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
+            await message.reply("Invalid input. Use format: 'user_id amount currency' (e.g., '123456 50 TRX')")
+            return
+        user_id = int(parts[0])
+        amount = float(parts[1])
+        currency = parts[2]
+        
+        # به جای محاسبه اختلاف، مستقیم مقدار جدید رو ست کن
+        conn = await db_connect()
+        if conn:
+            cursor = conn.cursor()
+            if currency == "USDT":
+                cursor.execute("UPDATE users SET balance_usdt = ? WHERE user_id = ?", (amount, user_id))
+            elif currency == "TRX":
+                cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (amount, user_id))
+            conn.commit()
+            conn.close()
+            await message.reply(f"Balance updated for user {user_id} to {amount} {currency}")
+        await state.finish()  # به جای clear، از finish استفاده می‌کنیم
+    except ValueError:
+        await message.reply("Invalid input. Please enter a valid number for ID and amount.")
+    except Exception as e:
+        await message.reply(f"Error: {e}")
+
+@dispatcher.message(AdminState.waiting_for_edit_balance)
+async def edit_balance(message: types.Message, state: FSMContext):
+    try:
+        parts = message.text.split()
+        if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
             raise ValueError
         user_id = int(parts[0])
         amount = float(parts[1])
