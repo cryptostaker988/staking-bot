@@ -16,7 +16,7 @@ import hashlib
 import json
 
 API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
-NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
+NOWPAYMENTS_API_KEYimetric = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
 IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
 ADMIN_ID = None
 logging.basicConfig(level=logging.INFO)
@@ -626,9 +626,17 @@ async def handle_webhook(request):
     amount = float(amount)
     currency = data.get("pay_currency", "").upper()
 
-    await update_balance(user_id, amount, currency)
-    await add_transaction(user_id, "deposit", amount, currency)
-    await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
+    # چک کردن حداقل واریز و کسر 10 درصد اگه کمتر باشه
+    min_deposit = 40 if currency == "TRX" else 20 if currency == "USDT" else 0
+    if amount < min_deposit:
+        credited_amount = amount * 0.9  # کسر 10 درصد
+        await update_balance(user_id, credited_amount, currency)
+        await add_transaction(user_id, "deposit", credited_amount, currency)
+        await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
+    else:
+        await update_balance(user_id, amount, currency)
+        await add_transaction(user_id, "deposit", amount, currency)
+        await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
 
     return web.Response(text="Success")
 
@@ -808,11 +816,19 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             await message.reply("Please enter a positive amount.", reply_markup=main_menu)
             return
         
+        # چک کردن حداقل واریز
+        if currency == "TRX" and amount < 40:
+            await message.reply("Minimum deposit for TRX is 40 TRX. Please enter a higher amount.", reply_markup=main_menu)
+            return
+        elif currency == "USDT" and amount < 20:
+            await message.reply("Minimum deposit for USDT is 20 USDT. Please enter a higher amount.", reply_markup=main_menu)
+            return
+        
         address = await generate_payment_address(user_id, amount, currency)
         if address:
             await save_deposit_address(user_id, currency, address)
-            await message.reply(f"Please send {amount:.2f} {currency} to this address (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
-            await message.reply(address)  # آدرس توی پیام جدا
+            await message.reply(f"Please send {amount:.2f} {currency} to this address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+            await message.reply(address)
         else:
             await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
         await state.clear()
