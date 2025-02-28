@@ -1099,11 +1099,6 @@ async def process_new_address(message: types.Message, state: FSMContext):
                        reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
-# مدیریت پیام‌های نامعتبر
-@dispatcher.message()
-async def handle_invalid(message: types.Message):
-    await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
-
 # مدیریت ادمین‌ها با دکمه‌های اینلاین
 @dispatcher.callback_query(F.data == "view_users")
 async def process_view_users(callback: types.CallbackQuery):
@@ -1251,6 +1246,11 @@ async def confirm_remove_admin(callback: types.CallbackQuery):
         conn.close()
         await callback.message.reply(f"Admin with ID {admin_id} has been removed!")
     await callback.answer()
+
+# مدیریت پیام‌های نامعتبر (باید بعد از همه هندلرهای حالت‌دار باشه)
+@dispatcher.message()
+async def handle_invalid(message: types.Message):
+    await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
 # تابع اصلی برای ربات
 async def main():
