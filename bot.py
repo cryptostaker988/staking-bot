@@ -249,7 +249,7 @@ async def update_earnings(user_id, earnings_change, currency):
                 if new_earnings < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET earnings_trx = ?, last_earning_update = ? WHERE user_id = ?", 
+                cursor.execute("UPDATE users SET earnings_trx = ?, last_earing_update = ? WHERE user_id = ?", 
                               (new_earnings, datetime.now(), user_id))
             conn.commit()
         conn.close()
@@ -554,8 +554,8 @@ class EarningsState(StatesGroup):
 class AdminState(StatesGroup):
     waiting_for_add_admin_id = State()
     waiting_for_remove_admin_id = State()
-    waiting_for_edit_balance = State()  # اضافه شده
-    waiting_for_delete_user = State()   # اضافه شده
+    waiting_for_edit_balance = State()
+    waiting_for_delete_user = State()
 
 # منوی اصلی با اموجی‌ها
 main_menu = ReplyKeyboardMarkup(
@@ -1122,12 +1122,15 @@ async def process_view_users(callback: types.CallbackQuery):
 
 @dispatcher.callback_query(F.data == "edit_balance")
 async def process_edit_balance(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 20 USDT'):")
     await state.set_state(AdminState.waiting_for_edit_balance)
+    await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 20 USDT'):")
+    current_state = await state.get_state()
+    logging.info(f"State set to: {current_state}")  # لاگ برای دیباگ
     await callback.answer()
 
 @dispatcher.message(AdminState.waiting_for_edit_balance)
 async def edit_balance(message: types.Message, state: FSMContext):
+    logging.info(f"Received message in edit_balance: {message.text}")  # لاگ برای دیباگ
     try:
         parts = message.text.split()
         if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
@@ -1137,7 +1140,6 @@ async def edit_balance(message: types.Message, state: FSMContext):
         amount = float(parts[1])
         currency = parts[2]
         
-        # به جای محاسبه اختلاف، مستقیم مقدار جدید رو ست کن
         conn = await db_connect()
         if conn:
             cursor = conn.cursor()
@@ -1148,29 +1150,11 @@ async def edit_balance(message: types.Message, state: FSMContext):
             conn.commit()
             conn.close()
             await message.reply(f"Balance updated for user {user_id} to {amount} {currency}")
-        await state.finish()  # به جای clear، از finish استفاده می‌کنیم
+        await state.finish()
     except ValueError:
         await message.reply("Invalid input. Please enter a valid number for ID and amount.")
     except Exception as e:
         await message.reply(f"Error: {e}")
-
-@dispatcher.message(AdminState.waiting_for_edit_balance)
-async def edit_balance(message: types.Message, state: FSMContext):
-    try:
-        parts = message.text.split()
-        if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
-            raise ValueError
-        user_id = int(parts[0])
-        amount = float(parts[1])
-        currency = parts[2]
-        
-        if await update_balance(user_id, amount - (await get_user(user_id))[2 if currency == "USDT" else 3], currency):
-            await message.reply(f"Balance updated for user {user_id}: {amount} {currency}")
-        else:
-            await message.reply("Failed to update balance.")
-        await state.clear()
-    except ValueError:
-        await message.reply("Invalid input. Use format: 'user_id amount currency' (e.g., '123456 50 TRX')")
 
 @dispatcher.callback_query(F.data == "delete_user")
 async def process_delete_user(callback: types.CallbackQuery, state: FSMContext):
