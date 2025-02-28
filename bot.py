@@ -1145,7 +1145,7 @@ async def edit_balance(message: types.Message, state: FSMContext):
             conn.commit()
             conn.close()
             await message.reply(f"Balance updated for user {user_id} to {amount} {currency}")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
     except ValueError:
         await message.reply("Invalid input. Please enter a valid number for ID and amount.")
     except Exception as e:
