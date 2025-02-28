@@ -111,6 +111,12 @@ async def initialize_database():
                             PRIMARY KEY (user_id, currency)
                         )''')
         
+        cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
+                            user_id INTEGER PRIMARY KEY
+                          )''')
+        # ادمین اصلی (kanka1) رو به‌صورت پیش‌فرض اضافه کن
+        cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (363541134)")  # ID kanka1
+        
         conn.commit()
         conn.close()
         logging.info("Database initialized successfully.")
@@ -140,6 +146,17 @@ async def get_user(user_id):
         conn.close()
         return user
     return None
+
+# چک کردن ادمین
+async def is_admin(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
+    return False
 
 # دریافت همه استیک‌های کاربر
 async def get_user_stakes(user_id):
@@ -531,6 +548,10 @@ class EarningsState(StatesGroup):
     choosing_action = State()
     entering_amount = State()
 
+class AdminState(StatesGroup):
+    waiting_for_add_admin_id = State()
+    waiting_for_remove_admin_id = State()
+
 # منوی اصلی با اموجی‌ها
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -653,6 +674,32 @@ async def send_welcome(message: types.Message):
         ADMIN_ID = user_id
         logging.info(f"Admin ID set to: {ADMIN_ID}")
     await message.reply("Welcome to the Staking Bot! Choose an option:", reply_markup=main_menu)
+
+@dispatcher.message(Command("admin"))
+async def admin_panel(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "Unknown"
+    
+    if not await is_admin(user_id):
+        await message.reply("شما ادمین نیستید!")
+        return
+    
+    # منوی اینلاین برای ادمین
+    admin_menu = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="مشاهده کاربران", callback_data="view_users"),
+         InlineKeyboardButton(text="ویرایش بالانس", callback_data="edit_balance")],
+        [InlineKeyboardButton(text="حذف کاربر", callback_data="delete_user"),
+         InlineKeyboardButton(text="آمار ربات", callback_data="stats")]
+    ])
+    
+    # فقط kanka1 بتونه ادمین‌ها رو مدیریت کنه
+    if username.lower() == "kanka1":
+        admin_menu.inline_keyboard.append([
+            InlineKeyboardButton(text="اضافه کردن ادمین", callback_data="add_admin"),
+            InlineKeyboardButton(text="حذف ادمین", callback_data="remove_admin")
+        ])
+    
+    await message.reply("پنل مدیریت ادمین:", reply_markup=admin_menu)
 
 @dispatcher.message(Command("deposit"))
 async def deposit_command(message: types.Message, state: FSMContext):
@@ -1051,6 +1098,67 @@ async def process_new_address(message: types.Message, state: FSMContext):
 @dispatcher.message()
 async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
+
+# مدیریت ادمین‌ها با دکمه‌های اینلاین
+@dispatcher.callback_query(F.data == "add_admin")
+async def process_add_admin(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.username.lower() != "kanka1":
+        await callback.answer("فقط ادمین اصلی می‌تواند ادمین اضافه کند!")
+        return
+    await callback.message.reply("لطفاً ID کاربری که می‌خواهید ادمین کنید را وارد کنید:")
+    await state.set_state(AdminState.waiting_for_add_admin_id)
+    await callback.answer()
+
+@dispatcher.message(AdminState.waiting_for_add_admin_id)
+async def add_admin_id(message: types.Message, state: FSMContext):
+    try:
+        new_admin_id = int(message.text)
+        conn = await db_connect()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (new_admin_id,))
+            conn.commit()
+            conn.close()
+            await message.reply(f"کاربر با ID {new_admin_id} به ادمین‌ها اضافه شد!")
+        await state.clear()
+    except ValueError:
+        await message.reply("ID نامعتبر است. لطفاً یک شماره وارد کنید.")
+
+@dispatcher.callback_query(F.data == "remove_admin")
+async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.username.lower() != "kanka1":
+        await callback.answer("فقط ادمین اصلی می‌تواند ادمین حذف کند!")
+        return
+    
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM admins WHERE user_id != 363541134")  # kanka1 حذف نشه
+        admins = cursor.fetchall()
+        conn.close()
+        
+        if not admins:
+            await callback.message.reply("هیچ ادمین دیگری وجود ندارد!")
+            await callback.answer()
+            return
+        
+        remove_menu = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"حذف {admin[0]}", callback_data=f"remove_{admin[0]}")] for admin in admins
+        ])
+        await callback.message.reply("ادمین‌ها برای حذف:", reply_markup=remove_menu)
+    await callback.answer()
+
+@dispatcher.callback_query(F.data.startswith("remove_"))
+async def confirm_remove_admin(callback: types.CallbackQuery):
+    admin_id = int(callback.data.split("_")[1])
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM admins WHERE user_id = ?", (admin_id,))
+        conn.commit()
+        conn.close()
+        await callback.message.reply(f"ادمین با ID {admin_id} حذف شد!")
+    await callback.answer()
 
 # تابع اصلی برای ربات
 async def main():
