@@ -53,7 +53,7 @@ async def initialize_database():
                             earnings_usdt REAL DEFAULT 0,
                             earnings_trx REAL DEFAULT 0,
                             last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            referrer_id INTEGER DEFAULT NULL  -- اضافه کردن ستون رفرر
+                            referrer_id INTEGER DEFAULT NULL
                         )''')
         
         try:
@@ -62,7 +62,7 @@ async def initialize_database():
             cursor.execute("ALTER TABLE users ADD COLUMN earnings_usdt REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN earnings_trx REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-            cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT NULL")  # اضافه کردن ستون رفرر
+            cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT NULL")
             logging.info("Updated users table with new columns.")
         except sqlite3.OperationalError:
             pass
@@ -122,7 +122,7 @@ async def initialize_database():
         conn.close()
         logging.info("Database initialized successfully.")
 
-# افزودن یا به‌روزرسانی کاربر (با پشتیبانی از رفرر)
+# افزودن یا به‌روزرسانی کاربر
 async def add_user(user_id, username, referrer_id=None):
     conn = await db_connect()
     if conn:
@@ -682,8 +682,9 @@ async def send_welcome(message: types.Message):
     global ADMIN_ID
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
-    args = message.get_args()
-    referrer_id = int(args) if args and args.isdigit() else None
+    # گرفتن آرگومان‌ها از متن پیام
+    command_parts = message.text.split()
+    referrer_id = int(command_parts[1]) if len(command_parts) > 1 and command_parts[1].isdigit() else None
     
     await add_user(user_id, username, referrer_id)
     if username.lower() == "kanka1":
