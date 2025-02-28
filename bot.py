@@ -1054,7 +1054,7 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
     try:
         amount = float(message.text)
         if amount < min_withdraw:
-            await message.reply(f"Amount must be at least {min_withdraw} {currency}.", reply_markup=main_menu)
+            await message.reply(f"Amount must be at least {min_withraw} {currency}.", reply_markup=main_menu)
             return
         
         total_amount = amount + fee
@@ -1103,7 +1103,27 @@ async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
 # مدیریت ادمین‌ها با دکمه‌های اینلاین
-@dispatcher.callback_query(lambda c: c.data == "add_admin")
+@dispatcher.callback_query(F.data == "view_users")
+async def process_view_users(callback: types.CallbackQuery):
+    await callback.message.reply("View Users clicked! This will show all users.")
+    await callback.answer()
+
+@dispatcher.callback_query(F.data == "edit_balance")
+async def process_edit_balance(callback: types.CallbackQuery):
+    await callback.message.reply("Edit Balance clicked! This will allow balance editing.")
+    await callback.answer()
+
+@dispatcher.callback_query(F.data == "delete_user")
+async def process_delete_user(callback: types.CallbackQuery):
+    await callback.message.reply("Delete User clicked! This will delete a user.")
+    await callback.answer()
+
+@dispatcher.callback_query(F.data == "stats")
+async def process_stats(callback: types.CallbackQuery):
+    await callback.message.reply("Bot Stats clicked! This will show bot statistics.")
+    await callback.answer()
+
+@dispatcher.callback_query(F.data == "add_admin")
 async def process_add_admin(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.username.lower() != "kanka1":
         await callback.answer("Only the main admin can add admins!")
@@ -1127,7 +1147,7 @@ async def add_admin_id(message: types.Message, state: FSMContext):
     except ValueError:
         await message.reply("Invalid ID. Please enter a number.")
 
-@dispatcher.callback_query(lambda c: c.data == "remove_admin")
+@dispatcher.callback_query(F.data == "remove_admin")
 async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.username.lower() != "kanka1":
         await callback.answer("Only the main admin can remove admins!")
@@ -1151,7 +1171,7 @@ async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext)
         await callback.message.reply("Admins to remove:", reply_markup=remove_menu)
     await callback.answer()
 
-@dispatcher.callback_query(lambda c: c.data.startswith("remove_"))
+@dispatcher.callback_query(F.data.startswith("remove_"))
 async def confirm_remove_admin(callback: types.CallbackQuery):
     admin_id = int(callback.data.split("_")[1])
     conn = await db_connect()
