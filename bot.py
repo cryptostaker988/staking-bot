@@ -494,13 +494,13 @@ async def get_withdrawal_details(request_id):
         return result
     return None
 
-# کارمزد ثابت
+# کارمزد ثابت (تغییر به 1.1 TRX و 3 USDT)
 def get_withdrawal_fee(currency):
     if currency == "USDT":
-        return 1.5  # کارمزد ثابت USDT
+        return 3.0  # کارمزد ثابت USDT
     elif currency == "TRX":
-        return 1.0  # کارمزد ثابت TRX
-    return 1.5  # پیش‌فرض
+        return 1.1  # کارمزد ثابت TRX
+    return 3.0  # پیش‌فرض
 
 # ارسال گزارش به مدیر با دکمه‌ها
 async def send_withdrawal_report():
@@ -879,7 +879,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
         address = await generate_payment_address(user_id, amount, currency)
         if address:
             await save_deposit_address(user_id, currency, address)
-            await message.reply(f"Please send {amount:.2f} {currency} to this address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+            await message.reply(f"Please send {amount:.2f} {currency} to this TRC-20 address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
             await message.reply(address)
         else:
             await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
@@ -1050,7 +1050,7 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
     data = await state.get_data()
     currency = data["currency"]
     
-    min_withdraw = 20 if currency == "USDT" else 80
+    min_withdraw = 20 if currency == "USDT" else 40  # حداقل برداشت: 20 USDT، 40 TRX
     fee = get_withdrawal_fee(currency)
     
     try:
@@ -1069,13 +1069,13 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
         
         wallet_address = await get_wallet_address(user_id, currency)
         if not wallet_address:
-            await message.reply(f"Please enter your {currency} wallet address:", reply_markup=main_menu)
+            await message.reply(f"Please enter your TRC-20 {currency} wallet address:", reply_markup=main_menu)
             await state.set_state(WithdrawState.entering_new_address)
             return
         
         if await update_earnings(user_id, -total_amount, currency):
             await add_withdraw_request(user_id, amount, currency, fee, wallet_address)
-            await message.reply(f"{amount:,.2f} {currency} has been deducted from your earnings (including {fee:.2f} {currency} network fee) and will be transferred to your wallet ({wallet_address}) within 24 hours after review.",
+            await message.reply(f"{amount:,.2f} {currency} has been deducted from your earnings (including {fee:.2f} {currency} network fee) and will be transferred to your TRC-20 wallet ({wallet_address}) within 24 hours after review.",
                                reply_markup=main_menu)
             await state.clear()
         else:
@@ -1094,7 +1094,7 @@ async def process_new_address(message: types.Message, state: FSMContext):
     await state.update_data(wallet_address=wallet_address)
     
     fee = get_withdrawal_fee(currency)
-    min_withdraw = 20 if currency == "USDT" else 80
+    min_withdraw = 20 if currency == "USDT" else 40  # حداقل برداشت: 20 USDT، 40 TRX
     await message.reply(f"Network fee for withdrawing {currency} is {fee:.2f} {currency}. Enter the amount to withdraw (minimum {min_withdraw} {currency}):",
                        reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
@@ -1247,7 +1247,7 @@ async def confirm_remove_admin(callback: types.CallbackQuery):
         await callback.message.reply(f"Admin with ID {admin_id} has been removed!")
     await callback.answer()
 
-# مدیریت پیام‌های نامعتبر (باید بعد از همه هندلرهای حالت‌دار باشه)
+# مدیریت پیام‌های نامعتبر
 @dispatcher.message()
 async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
