@@ -684,25 +684,25 @@ async def admin_panel(message: types.Message):
     username = message.from_user.username or "Unknown"
     
     if not await is_admin(user_id):
-        await message.reply("شما ادمین نیستید!")
+        await message.reply("You are not an admin!")
         return
     
-    # منوی اینلاین برای ادمین
+    # منوی اینلاین برای ادمین (به انگلیسی)
     admin_menu = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="مشاهده کاربران", callback_data="view_users"),
-         InlineKeyboardButton(text="ویرایش بالانس", callback_data="edit_balance")],
-        [InlineKeyboardButton(text="حذف کاربر", callback_data="delete_user"),
-         InlineKeyboardButton(text="آمار ربات", callback_data="stats")]
+        [InlineKeyboardButton(text="View Users", callback_data="view_users"),
+         InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
+        [InlineKeyboardButton(text="Delete User", callback_data="delete_user"),
+         InlineKeyboardButton(text="Bot Stats", callback_data="stats")]
     ])
     
     # فقط kanka1 بتونه ادمین‌ها رو مدیریت کنه
     if username.lower() == "kanka1":
         admin_menu.inline_keyboard.append([
-            InlineKeyboardButton(text="اضافه کردن ادمین", callback_data="add_admin"),
-            InlineKeyboardButton(text="حذف ادمین", callback_data="remove_admin")
+            InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
+            InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
         ])
     
-    await message.reply("پنل مدیریت ادمین:", reply_markup=admin_menu)
+    await message.reply("Admin Panel:", reply_markup=admin_menu)
 
 @dispatcher.message(Command("deposit"))
 async def deposit_command(message: types.Message, state: FSMContext):
@@ -1103,12 +1103,12 @@ async def handle_invalid(message: types.Message):
     await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
 
 # مدیریت ادمین‌ها با دکمه‌های اینلاین
-@dispatcher.callback_query(F.data == "add_admin")
+@dispatcher.callback_query(lambda c: c.data == "add_admin")
 async def process_add_admin(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.username.lower() != "kanka1":
-        await callback.answer("فقط ادمین اصلی می‌تواند ادمین اضافه کند!")
+        await callback.answer("Only the main admin can add admins!")
         return
-    await callback.message.reply("لطفاً ID کاربری که می‌خواهید ادمین کنید را وارد کنید:")
+    await callback.message.reply("Please enter the user ID you want to add as an admin:")
     await state.set_state(AdminState.waiting_for_add_admin_id)
     await callback.answer()
 
@@ -1122,15 +1122,15 @@ async def add_admin_id(message: types.Message, state: FSMContext):
             cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (new_admin_id,))
             conn.commit()
             conn.close()
-            await message.reply(f"کاربر با ID {new_admin_id} به ادمین‌ها اضافه شد!")
+            await message.reply(f"User with ID {new_admin_id} has been added as an admin!")
         await state.clear()
     except ValueError:
-        await message.reply("ID نامعتبر است. لطفاً یک شماره وارد کنید.")
+        await message.reply("Invalid ID. Please enter a number.")
 
-@dispatcher.callback_query(F.data == "remove_admin")
+@dispatcher.callback_query(lambda c: c.data == "remove_admin")
 async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.username.lower() != "kanka1":
-        await callback.answer("فقط ادمین اصلی می‌تواند ادمین حذف کند!")
+        await callback.answer("Only the main admin can remove admins!")
         return
     
     conn = await db_connect()
@@ -1141,17 +1141,17 @@ async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext)
         conn.close()
         
         if not admins:
-            await callback.message.reply("هیچ ادمین دیگری وجود ندارد!")
+            await callback.message.reply("No other admins exist!")
             await callback.answer()
             return
         
         remove_menu = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"حذف {admin[0]}", callback_data=f"remove_{admin[0]}")] for admin in admins
+            [InlineKeyboardButton(text=f"Remove {admin[0]}", callback_data=f"remove_{admin[0]}")] for admin in admins
         ])
-        await callback.message.reply("ادمین‌ها برای حذف:", reply_markup=remove_menu)
+        await callback.message.reply("Admins to remove:", reply_markup=remove_menu)
     await callback.answer()
 
-@dispatcher.callback_query(F.data.startswith("remove_"))
+@dispatcher.callback_query(lambda c: c.data.startswith("remove_"))
 async def confirm_remove_admin(callback: types.CallbackQuery):
     admin_id = int(callback.data.split("_")[1])
     conn = await db_connect()
@@ -1160,7 +1160,7 @@ async def confirm_remove_admin(callback: types.CallbackQuery):
         cursor.execute("DELETE FROM admins WHERE user_id = ?", (admin_id,))
         conn.commit()
         conn.close()
-        await callback.message.reply(f"ادمین با ID {admin_id} حذف شد!")
+        await callback.message.reply(f"Admin with ID {admin_id} has been removed!")
     await callback.answer()
 
 # تابع اصلی برای ربات
