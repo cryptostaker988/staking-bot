@@ -52,7 +52,8 @@ async def initialize_database():
                             balance_trx REAL DEFAULT 0,
                             earnings_usdt REAL DEFAULT 0,
                             earnings_trx REAL DEFAULT 0,
-                            last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            referrer_id INTEGER DEFAULT NULL  -- اضافه کردن ستون رفرر
                         )''')
         
         try:
@@ -61,6 +62,7 @@ async def initialize_database():
             cursor.execute("ALTER TABLE users ADD COLUMN earnings_usdt REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN earnings_trx REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT NULL")  # اضافه کردن ستون رفرر
             logging.info("Updated users table with new columns.")
         except sqlite3.OperationalError:
             pass
@@ -114,15 +116,14 @@ async def initialize_database():
         cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
                             user_id INTEGER PRIMARY KEY
                           )''')
-        # ادمین اصلی (kanka1) رو به‌صورت پیش‌فرض اضافه کن
         cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (363541134)")  # ID kanka1
         
         conn.commit()
         conn.close()
         logging.info("Database initialized successfully.")
 
-# افزودن یا به‌روزرسانی کاربر
-async def add_user(user_id, username):
+# افزودن یا به‌روزرسانی کاربر (با پشتیبانی از رفرر)
+async def add_user(user_id, username, referrer_id=None):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
@@ -131,8 +132,8 @@ async def add_user(user_id, username):
         if user:
             cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
         else:
-            cursor.execute("INSERT INTO users (user_id, username, last_earning_update) VALUES (?, ?, ?)", 
-                          (user_id, username, datetime.now()))
+            cursor.execute("INSERT INTO users (user_id, username, last_earning_update, referrer_id) VALUES (?, ?, ?, ?)", 
+                          (user_id, username, datetime.now(), referrer_id))
         conn.commit()
         conn.close()
 
@@ -405,7 +406,6 @@ async def save_deposit_address(user_id, currency, address):
 # تولید آدرس واریز با NOWPayments
 async def generate_payment_address(user_id, amount, currency):
     headers = {"x-api-key": NOWPAYMENTS_API_KEY}
-    # برای USDT از usdttrc20 استفاده می‌کنیم
     pay_currency = "usdttrc20" if currency == "USDT" else currency.lower()
     price_currency = "usdttrc20" if currency == "USDT" else currency.lower()
     payload = {
@@ -494,7 +494,7 @@ async def get_withdrawal_details(request_id):
         return result
     return None
 
-# کارمزد ثابت (تغییر به 1.1 TRX و 3 USDT)
+# کارمزد ثابت
 def get_withdrawal_fee(currency):
     if currency == "USDT":
         return 3.0  # کارمزد ثابت USDT
@@ -623,7 +623,7 @@ earnings_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# وب‌هوک برای NOWPayments
+# وب‌هوک برای NOWPayments (با پشتیبانی از رفرال)
 async def handle_webhook(request):
     signature = request.headers.get("x-nowpayments-sig")
     body = await request.text()
@@ -643,7 +643,6 @@ async def handle_webhook(request):
         return web.Response(text="Success")
 
     user_id = int(data.get("order_id"))
-    # مدیریت کلیدهای مختلف برای مقدار پرداخت
     amount = data.get("actually_paid") or data.get("pay_amount") or data.get("price_amount")
     if amount is None:
         logging.error("No valid amount found in webhook data.")
@@ -664,17 +663,29 @@ async def handle_webhook(request):
         await add_transaction(user_id, "deposit", amount, currency)
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
 
+    # اضافه کردن بونوس رفرال (5 درصد)
+    user = await get_user(user_id)
+    if user and user[7]:  # ستون referrer_id (شاخص 7)
+        referrer_id = user[7]
+        bonus_amount = amount * 0.05  # 5 درصد از مبلغ دیپازیت
+        await update_balance(referrer_id, bonus_amount, currency)
+        await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
+        await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
+
     return web.Response(text="Success")
 
 app.router.add_post('/webhook', handle_webhook)
 
-# دستورات منوی آبی‌رنگ
+# دستورات منوی آبی‌رنگ (تغییر /start برای رفرال)
 @dispatcher.message(Command("start"))
 async def send_welcome(message: types.Message):
     global ADMIN_ID
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
-    await add_user(user_id, username)
+    args = message.get_args()
+    referrer_id = int(args) if args and args.isdigit() else None
+    
+    await add_user(user_id, username, referrer_id)
     if username.lower() == "kanka1":
         ADMIN_ID = user_id
         logging.info(f"Admin ID set to: {ADMIN_ID}")
@@ -697,7 +708,6 @@ async def admin_panel(message: types.Message):
          InlineKeyboardButton(text="Bot Stats", callback_data="stats")]
     ])
     
-    # فقط kanka1 بتونه ادمین‌ها رو مدیریت کنه
     if username.lower() == "kanka1":
         admin_menu.inline_keyboard.append([
             InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
@@ -740,7 +750,6 @@ async def check_balance_command(message: types.Message):
     username = message.from_user.username or "Unknown"
     user = await get_user(user_id)
     if not user:
-        # اگه کاربر توی دیتابیس نبود، ثبتش کن
         await add_user(user_id, username)
         user = await get_user(user_id)
     
@@ -807,7 +816,7 @@ async def referral_command(message: types.Message):
     
     await message.reply(f"Your referral link: {referral_link}", reply_markup=share_button)
 
-# Handlerهای کیبورد (برای سازگاری با کد قبلی)
+# Handlerهای کیبورد
 @dispatcher.message(F.text == "💰 Deposit")
 async def deposit(message: types.Message, state: FSMContext):
     await deposit_command(message, state)
@@ -868,7 +877,6 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             await message.reply("Please enter a positive amount.", reply_markup=main_menu)
             return
         
-        # چک کردن حداقل واریز
         if currency == "TRX" and amount < 40:
             await message.reply("Minimum deposit for TRX is 40 TRX. Please enter a higher amount.", reply_markup=main_menu)
             return
@@ -1050,7 +1058,7 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
     data = await state.get_data()
     currency = data["currency"]
     
-    min_withdraw = 20 if currency == "USDT" else 40  # حداقل برداشت: 20 USDT، 40 TRX
+    min_withdraw = 20 if currency == "USDT" else 40  # حداقل برداشت
     fee = get_withdrawal_fee(currency)
     
     try:
@@ -1069,13 +1077,13 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
         
         wallet_address = await get_wallet_address(user_id, currency)
         if not wallet_address:
-            await message.reply(f"Please enter your TRC-20 {currency} wallet address:", reply_markup=main_menu)
+            await message.reply(f"The network fee for withdrawing {currency} is {fee:.2f} {currency}. Please enter your TRC-20 {currency} wallet address:", reply_markup=main_menu)
             await state.set_state(WithdrawState.entering_new_address)
             return
         
         if await update_earnings(user_id, -total_amount, currency):
             await add_withdraw_request(user_id, amount, currency, fee, wallet_address)
-            await message.reply(f"{amount:,.2f} {currency} has been deducted from your earnings (including {fee:.2f} {currency} network fee) and will be transferred to your TRC-20 wallet ({wallet_address}) within 24 hours after review.",
+            await message.reply(f"The network fee for withdrawing {currency} is {fee:.2f} {currency}. {amount:,.2f} {currency} has been deducted from your earnings (including fee) and will be transferred to your TRC-20 wallet ({wallet_address}) within 24 hours after review.",
                                reply_markup=main_menu)
             await state.clear()
         else:
@@ -1094,7 +1102,7 @@ async def process_new_address(message: types.Message, state: FSMContext):
     await state.update_data(wallet_address=wallet_address)
     
     fee = get_withdrawal_fee(currency)
-    min_withdraw = 20 if currency == "USDT" else 40  # حداقل برداشت: 20 USDT، 40 TRX
+    min_withdraw = 20 if currency == "USDT" else 40
     await message.reply(f"Network fee for withdrawing {currency} is {fee:.2f} {currency}. Enter the amount to withdraw (minimum {min_withdraw} {currency}):",
                        reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
@@ -1145,7 +1153,7 @@ async def edit_balance(message: types.Message, state: FSMContext):
             conn.commit()
             conn.close()
             await message.reply(f"Balance updated for user {user_id} to {amount} {currency}")
-        await state.clear()  # تغییر از finish به clear
+        await state.clear()
     except ValueError:
         await message.reply("Invalid input. Please enter a valid number for ID and amount.")
     except Exception as e:
