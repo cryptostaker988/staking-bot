@@ -50,8 +50,14 @@ async def initialize_database():
                             username TEXT,
                             balance_usdt REAL DEFAULT 0,
                             balance_trx REAL DEFAULT 0,
+                            balance_bnb REAL DEFAULT 0,
+                            balance_doge REAL DEFAULT 0,
+                            balance_ton REAL DEFAULT 0,
                             earnings_usdt REAL DEFAULT 0,
                             earnings_trx REAL DEFAULT 0,
+                            earnings_bnb REAL DEFAULT 0,
+                            earnings_doge REAL DEFAULT 0,
+                            earnings_ton REAL DEFAULT 0,
                             last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             referrer_id INTEGER DEFAULT NULL
                         )''')
@@ -59,8 +65,14 @@ async def initialize_database():
         try:
             cursor.execute("ALTER TABLE users ADD COLUMN balance_usdt REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN balance_trx REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_bnb REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_doge REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_ton REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN earnings_usdt REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN earnings_trx REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_bnb REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_doge REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_ton REAL DEFAULT 0")
             cursor.execute("ALTER TABLE users ADD COLUMN last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
             cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT NULL")
             logging.info("Updated users table with new columns.")
@@ -184,7 +196,7 @@ async def get_active_stakes(user_id):
         for stake in all_stakes:
             if len(stake) == 8:  # بدون currency
                 stake_id, _, plan_id, amount, start_date, duration_days, last_update, is_expired = stake
-                currency = "USDT"  # پیش‌فرض برای سازگاری با داده‌های قدیمی
+                currency = "USDT"  # پیش‌فرض برای سازگاری
             else:
                 stake_id, _, plan_id, amount, currency, start_date, duration_days, last_update, is_expired = stake
             
@@ -202,10 +214,10 @@ async def update_balance(user_id, amount, currency):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT balance_usdt, balance_trx FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton FROM users WHERE user_id = ?", (user_id,))
         user = cursor.fetchone()
         if user:
-            balance_usdt, balance_trx = user
+            balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user
             if currency == "USDT":
                 new_balance = balance_usdt + amount
                 if new_balance < 0:
@@ -218,12 +230,36 @@ async def update_balance(user_id, amount, currency):
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "BNB":
+                new_balance = balance_bnb + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_bnb = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "DOGE":
+                new_balance = balance_doge + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_doge = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "TON":
+                new_balance = balance_ton + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_ton = ? WHERE user_id = ?", (new_balance, user_id))
             conn.commit()
         else:
             if currency == "USDT":
                 cursor.execute("INSERT INTO users (user_id, balance_usdt) VALUES (?, ?)", (user_id, amount))
             elif currency == "TRX":
                 cursor.execute("INSERT INTO users (user_id, balance_trx) VALUES (?, ?)", (user_id, amount))
+            elif currency == "BNB":
+                cursor.execute("INSERT INTO users (user_id, balance_bnb) VALUES (?, ?)", (user_id, amount))
+            elif currency == "DOGE":
+                cursor.execute("INSERT INTO users (user_id, balance_doge) VALUES (?, ?)", (user_id, amount))
+            elif currency == "TON":
+                cursor.execute("INSERT INTO users (user_id, balance_ton) VALUES (?, ?)", (user_id, amount))
             conn.commit()
         conn.close()
         return True
@@ -234,10 +270,10 @@ async def update_earnings(user_id, earnings_change, currency):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT earnings_usdt, earnings_trx FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
         user = cursor.fetchone()
         if user:
-            earnings_usdt, earnings_trx = user
+            earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user
             if currency == "USDT":
                 new_earnings = earnings_usdt + earnings_change
                 if new_earnings < 0:
@@ -251,6 +287,27 @@ async def update_earnings(user_id, earnings_change, currency):
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET earnings_trx = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "BNB":
+                new_earnings = earnings_bnb + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_bnb = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "DOGE":
+                new_earnings = earnings_doge + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_doge = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "TON":
+                new_earnings = earnings_ton + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_ton = ?, last_earning_update = ? WHERE user_id = ?", 
                               (new_earnings, datetime.now(), user_id))
             conn.commit()
         conn.close()
@@ -275,13 +332,16 @@ async def calculate_total_earnings(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT earnings_usdt, earnings_trx FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
         earnings = cursor.fetchone()
-        past_earnings_usdt, past_earnings_trx = earnings if earnings else (0, 0)
+        past_earnings_usdt, past_earnings_trx, past_earnings_bnb, past_earnings_doge, past_earnings_ton = earnings if earnings else (0, 0, 0, 0, 0)
         
         stakes = await get_user_stakes(user_id)
         total_new_earnings_usdt = 0
         total_new_earnings_trx = 0
+        total_new_earnings_bnb = 0
+        total_new_earnings_doge = 0
+        total_new_earnings_ton = 0
         now = datetime.now()
         
         for stake in stakes:
@@ -308,6 +368,12 @@ async def calculate_total_earnings(user_id):
                         total_new_earnings_usdt += new_earnings
                     elif currency == "TRX":
                         total_new_earnings_trx += new_earnings
+                    elif currency == "BNB":
+                        total_new_earnings_bnb += new_earnings
+                    elif currency == "DOGE":
+                        total_new_earnings_doge += new_earnings
+                    elif currency == "TON":
+                        total_new_earnings_ton += new_earnings
                     cursor.execute("UPDATE stakes SET last_earning_update = ? WHERE id = ?", (now, stake_id))
             elif days_passed >= duration_days and is_expired == 0:
                 stake_earnings = amount * profit_rate * duration_days
@@ -315,19 +381,31 @@ async def calculate_total_earnings(user_id):
                     total_new_earnings_usdt += stake_earnings
                 elif currency == "TRX":
                     total_new_earnings_trx += stake_earnings
+                elif currency == "BNB":
+                    total_new_earnings_bnb += stake_earnings
+                elif currency == "DOGE":
+                    total_new_earnings_doge += stake_earnings
+                elif currency == "TON":
+                    total_new_earnings_ton += stake_earnings
                 cursor.execute("UPDATE stakes SET last_earning_update = ?, is_expired = 1 WHERE id = ?", (now, stake_id))
         
         if total_new_earnings_usdt > 0:
             await update_earnings(user_id, total_new_earnings_usdt, "USDT")
         if total_new_earnings_trx > 0:
             await update_earnings(user_id, total_new_earnings_trx, "TRX")
+        if total_new_earnings_bnb > 0:
+            await update_earnings(user_id, total_new_earnings_bnb, "BNB")
+        if total_new_earnings_doge > 0:
+            await update_earnings(user_id, total_new_earnings_doge, "DOGE")
+        if total_new_earnings_ton > 0:
+            await update_earnings(user_id, total_new_earnings_ton, "TON")
         
-        cursor.execute("SELECT earnings_usdt, earnings_trx FROM users WHERE user_id = ?", (user_id,))
-        earnings_usdt, earnings_trx = cursor.fetchone()
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = cursor.fetchone()
         conn.commit()
         conn.close()
-        return earnings_usdt, earnings_trx
-    return 0, 0
+        return earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton
+    return 0, 0, 0, 0, 0
 
 # ثبت تراکنش
 async def add_transaction(user_id, transaction_type, amount, currency):
@@ -344,13 +422,25 @@ async def add_transaction(user_id, transaction_type, amount, currency):
 async def transfer_earnings_to_balance(user_id, amount, currency):
     user = await get_user(user_id)
     if user:
-        earnings_usdt, earnings_trx = user[4], user[5]  # ستون‌های earnings_usdt و earnings_trx
-        earnings = earnings_usdt if currency == "USDT" else earnings_trx
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
+        earnings = {
+            "USDT": earnings_usdt,
+            "TRX": earnings_trx,
+            "BNB": earnings_bnb,
+            "DOGE": earnings_doge,
+            "TON": earnings_ton
+        }[currency]
         if amount > 0 and amount <= earnings:
             if await update_balance(user_id, amount, currency) and await update_earnings(user_id, -amount, currency):
                 await add_transaction(user_id, "earnings_transfer", amount, currency)
                 user = await get_user(user_id)
-                new_balance = user[2] if currency == "USDT" else user[3]  # balance_usdt یا balance_trx
+                new_balance = {
+                    "USDT": user[2],
+                    "TRX": user[3],
+                    "BNB": user[4],
+                    "DOGE": user[5],
+                    "TON": user[6]
+                }[currency]
                 return True, f"{amount:.2f} {currency} has been transferred to your balance. New {currency} balance: {new_balance:.2f} {currency}"
             else:
                 return False, "Failed to transfer earnings. Try again."
@@ -406,11 +496,17 @@ async def save_deposit_address(user_id, currency, address):
 # تولید آدرس واریز با NOWPayments
 async def generate_payment_address(user_id, amount, currency):
     headers = {"x-api-key": NOWPAYMENTS_API_KEY}
-    pay_currency = "usdttrc20" if currency == "USDT" else currency.lower()
-    price_currency = "usdttrc20" if currency == "USDT" else currency.lower()
+    pay_currency_map = {
+        "USDT": "usdttrc20",
+        "TRX": "trx",
+        "BNB": "bnb",
+        "DOGE": "doge",
+        "TON": "ton"
+    }
+    pay_currency = pay_currency_map[currency]
     payload = {
         "price_amount": amount,
-        "price_currency": price_currency,
+        "price_currency": pay_currency,
         "pay_currency": pay_currency,
         "order_id": str(user_id),
         "ipn_callback_url": "https://new-staking-bot.onrender.com/webhook"
@@ -494,13 +590,33 @@ async def get_withdrawal_details(request_id):
         return result
     return None
 
-# کارمزد ثابت
+# کارمزد ثابت و حداقل‌ها
 def get_withdrawal_fee(currency):
-    if currency == "USDT":
-        return 3.0  # کارمزد ثابت USDT
-    elif currency == "TRX":
-        return 1.1  # کارمزد ثابت TRX
-    return 3.0  # پیش‌فرض
+    return {
+        "USDT": 3.0,
+        "TRX": 1.1,
+        "BNB": 0.002,
+        "DOGE": 1.0,
+        "TON": 0.1
+    }[currency]
+
+def get_min_deposit(currency):
+    return {
+        "USDT": 20.0,
+        "TRX": 40.0,
+        "BNB": 0.05,
+        "DOGE": 150.0,
+        "TON": 8.0
+    }[currency]
+
+def get_min_withdrawal(currency):
+    return {
+        "USDT": 20.0,
+        "TRX": 40.0,
+        "BNB": 0.05,
+        "DOGE": 150.0,
+        "TON": 8.0
+    }[currency]
 
 # ارسال گزارش به مدیر با دکمه‌ها
 async def send_withdrawal_report():
@@ -572,7 +688,8 @@ main_menu = ReplyKeyboardMarkup(
 deposit_currency_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Deposit USDT"), KeyboardButton(text="Deposit TRX")],
-        [KeyboardButton(text="Back to Main Menu")]
+        [KeyboardButton(text="Deposit BNB"), KeyboardButton(text="Deposit DOGE")],
+        [KeyboardButton(text="Deposit TON"), KeyboardButton(text="Back to Main Menu")]
     ],
     resize_keyboard=True
 )
@@ -581,12 +698,13 @@ deposit_currency_menu = ReplyKeyboardMarkup(
 stake_currency_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Stake USDT"), KeyboardButton(text="Stake TRX")],
-        [KeyboardButton(text="Back to Main Menu")]
+        [KeyboardButton(text="Stake BNB"), KeyboardButton(text="Stake DOGE")],
+        [KeyboardButton(text="Stake TON"), KeyboardButton(text="Back to Main Menu")]
     ],
     resize_keyboard=True
 )
 
-# منوی پلن‌های استیک (مشترک برای USDT و TRX)
+# منوی پلن‌های استیک
 stake_plan_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Starter 2%"), KeyboardButton(text="Pro 3%")],
@@ -601,7 +719,8 @@ stake_plan_menu = ReplyKeyboardMarkup(
 withdraw_currency_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Withdraw USDT"), KeyboardButton(text="Withdraw TRX")],
-        [KeyboardButton(text="Back to Main Menu")]
+        [KeyboardButton(text="Withdraw BNB"), KeyboardButton(text="Withdraw DOGE")],
+        [KeyboardButton(text="Withdraw TON"), KeyboardButton(text="Back to Main Menu")]
     ],
     resize_keyboard=True
 )
@@ -650,9 +769,11 @@ async def handle_webhook(request):
     
     amount = float(amount)
     currency = data.get("pay_currency", "").upper()
+    if currency == "USDTTRC20":
+        currency = "USDT"
 
     # چک کردن حداقل واریز
-    min_deposit = 40 if currency == "TRX" else 20 if currency == "USDT" else 0
+    min_deposit = get_min_deposit(currency)
     if amount < min_deposit:
         credited_amount = amount * 0.9  # کسر 10 درصد
         await update_balance(user_id, credited_amount, currency)
@@ -660,8 +781,8 @@ async def handle_webhook(request):
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         # پیام به رفرال اگه واریز کمتر از حداقل باشه
         user = await get_user(user_id)
-        if user and user[7]:  # ستون referrer_id (شاخص 7)
-            referrer_id = user[7]
+        if user and user[12]:  # ستون referrer_id (شاخص 12)
+            referrer_id = user[12]
             await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.2f} {currency}, which is less than the minimum ({min_deposit} {currency}), no referral bonus was credited.")
     else:
         credited_amount = amount
@@ -670,8 +791,8 @@ async def handle_webhook(request):
         await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         # بونوس رفرال فقط برای واریزهای کامل
         user = await get_user(user_id)
-        if user and user[7]:  # ستون referrer_id (شاخص 7)
-            referrer_id = user[7]
+        if user and user[12]:  # ستون referrer_id (شاخص 12)
+            referrer_id = user[12]
             bonus_amount = credited_amount * 0.05  # 5 درصد از مبلغ نهایی
             await update_balance(referrer_id, bonus_amount, currency)
             await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
@@ -757,8 +878,8 @@ async def check_balance_command(message: types.Message):
         await add_user(user_id, username)
         user = await get_user(user_id)
     
-    balance_usdt, balance_trx = user[2], user[3]
-    await message.reply(f"Your balance: {balance_trx:,.2f} TRX and {balance_usdt:,.2f} USDT")
+    balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
+    await message.reply(f"Your balance:\n{balance_usdt:,.2f} USDT\n{balance_trx:,.2f} TRX\n{balance_bnb:,.4f} BNB\n{balance_doge:,.2f} DOGE\n{balance_ton:,.2f} TON")
 
 @dispatcher.message(Command("checkstaked"))
 async def check_staked_command(message: types.Message):
@@ -801,8 +922,8 @@ async def view_earnings_command(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     user = await get_user(user_id)
     if user:
-        earnings_usdt, earnings_trx = await calculate_total_earnings(user_id)
-        await message.reply(f"Your total earnings: {earnings_trx:,.2f} TRX and {earnings_usdt:,.2f} USDT", reply_markup=earnings_menu)
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
+        await message.reply(f"Your total earnings:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.4f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON", reply_markup=earnings_menu)
         await state.set_state(EarningsState.choosing_action)
     else:
         await message.reply("User not found.")
@@ -851,7 +972,13 @@ async def referral_link(message: types.Message):
 
 @dispatcher.message(DepositState.selecting_currency)
 async def process_deposit_currency(message: types.Message, state: FSMContext):
-    currency_map = {"Deposit USDT": "USDT", "Deposit TRX": "TRX"}
+    currency_map = {
+        "Deposit USDT": "USDT",
+        "Deposit TRX": "TRX",
+        "Deposit BNB": "BNB",
+        "Deposit DOGE": "DOGE",
+        "Deposit TON": "TON"
+    }
     if message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
         await state.clear()
@@ -881,17 +1008,16 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             await message.reply("Please enter a positive amount.", reply_markup=main_menu)
             return
         
-        if currency == "TRX" and amount < 40:
-            await message.reply("Minimum deposit for TRX is 40 TRX. Please enter a higher amount.", reply_markup=main_menu)
-            return
-        elif currency == "USDT" and amount < 20:
-            await message.reply("Minimum deposit for USDT is 20 USDT. Please enter a higher amount.", reply_markup=main_menu)
+        min_deposit = get_min_deposit(currency)
+        if amount < min_deposit:
+            await message.reply(f"Minimum deposit for {currency} is {min_deposit} {currency}. Please enter a higher amount.", reply_markup=main_menu)
             return
         
         address = await generate_payment_address(user_id, amount, currency)
         if address:
             await save_deposit_address(user_id, currency, address)
-            await message.reply(f"Please send {amount:.2f} {currency} to this TRC-20 address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+            network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
+            await message.reply(f"Please send {amount:.2f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
             await message.reply(address)
         else:
             await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
@@ -906,7 +1032,13 @@ async def process_stake_currency(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    currency_map = {"Stake USDT": "USDT", "Stake TRX": "TRX"}
+    currency_map = {
+        "Stake USDT": "USDT",
+        "Stake TRX": "TRX",
+        "Stake BNB": "BNB",
+        "Stake DOGE": "DOGE",
+        "Stake TON": "TON"
+    }
     if message.text not in currency_map:
         await message.reply("Please select a valid currency.", reply_markup=stake_currency_menu)
         return
@@ -973,18 +1105,13 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
             await message.reply("Please enter a positive amount.", reply_markup=stake_plan_menu)
             return
         
-        if plan_id == 1 and amount < 10:
-            await message.reply(f"Amount must be at least 10 {currency} for Starter 2%.", reply_markup=stake_plan_menu)
-            return
-        elif plan_id == 2 and amount < 5000:
-            await message.reply(f"Amount must be at least 5,000 {currency} for Pro 3%.", reply_markup=stake_plan_menu)
-            return
-        elif plan_id == 3 and amount < 20000:
-            await message.reply(f"Amount must be at least 20,000 {currency} for Elite 4%.", reply_markup=stake_plan_menu)
+        min_stake = 10 if plan_id == 1 else 5000 if plan_id == 2 else 20000 if plan_id == 3 else 0
+        if amount < min_stake:
+            await message.reply(f"Amount must be at least {min_stake} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
             return
         
         user = await get_user(user_id)
-        balance = user[2] if currency == "USDT" else user[3]
+        balance = user[2] if currency == "USDT" else user[3] if currency == "TRX" else user[4] if currency == "BNB" else user[5] if currency == "DOGE" else user[6]
         if balance < amount:
             await message.reply(f"Insufficient {currency} balance.", reply_markup=stake_plan_menu)
             return
@@ -1003,8 +1130,8 @@ async def process_earnings_action(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == "Transfer to Balance":
         user = await get_user(user_id)
-        earnings_usdt, earnings_trx = user[4], user[5]
-        await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable: {earnings_trx:,.2f} TRX and {earnings_usdt:,.2f} USDT\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
+        await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.4f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
         await state.set_state(EarningsState.entering_amount)
     elif message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
@@ -1022,7 +1149,7 @@ async def process_transfer_amount(message: types.Message, state: FSMContext):
     
     try:
         parts = message.text.split()
-        if len(parts) != 2 or parts[1] not in ["TRX", "USDT"]:
+        if len(parts) != 2 or parts[1] not in ["USDT", "TRX", "BNB", "DOGE", "TON"]:
             raise ValueError
         amount = float(parts[0])
         currency = parts[1]
@@ -1043,7 +1170,13 @@ async def process_withdraw_currency(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    currency_map = {"Withdraw USDT": "USDT", "Withdraw TRX": "TRX"}
+    currency_map = {
+        "Withdraw USDT": "USDT",
+        "Withdraw TRX": "TRX",
+        "Withdraw BNB": "BNB",
+        "Withdraw DOGE": "DOGE",
+        "Withdraw TON": "TON"
+    }
     if message.text not in currency_map:
         await message.reply("Please select a valid currency.", reply_markup=withdraw_currency_menu)
         return
@@ -1052,7 +1185,7 @@ async def process_withdraw_currency(message: types.Message, state: FSMContext):
     await state.update_data(currency=currency)
     
     user = await get_user(user_id)
-    earnings = user[4] if currency == "USDT" else user[5]
+    earnings = user[5] if currency == "USDT" else user[6] if currency == "TRX" else user[7] if currency == "BNB" else user[8] if currency == "DOGE" else user[9]
     await message.reply(f"Your available earnings for {currency}: {earnings:,.2f} {currency}. Enter the amount to withdraw:", reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
@@ -1062,18 +1195,18 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
     data = await state.get_data()
     currency = data["currency"]
     
-    min_withdraw = 20 if currency == "USDT" else 40  # حداقل برداشت
+    min_withdrawal = get_min_withdrawal(currency)
     fee = get_withdrawal_fee(currency)
     
     try:
         amount = float(message.text)
-        if amount < min_withdraw:
-            await message.reply(f"Amount must be at least {min_withdraw} {currency}.", reply_markup=main_menu)
+        if amount < min_withdrawal:
+            await message.reply(f"Amount must be at least {min_withdrawal} {currency}.", reply_markup=main_menu)
             return
         
         total_amount = amount + fee
         user = await get_user(user_id)
-        earnings = user[4] if currency == "USDT" else user[5]
+        earnings = user[5] if currency == "USDT" else user[6] if currency == "TRX" else user[7] if currency == "BNB" else user[8] if currency == "DOGE" else user[9]
         
         if earnings < total_amount:
             await message.reply(f"Insufficient {currency} earnings.", reply_markup=main_menu)
@@ -1081,13 +1214,15 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
         
         wallet_address = await get_wallet_address(user_id, currency)
         if not wallet_address:
-            await message.reply(f"The network fee for withdrawing {currency} is {fee:.2f} {currency}. Please enter your TRC-20 {currency} wallet address:", reply_markup=main_menu)
+            network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
+            await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. Please enter your {network} {currency} wallet address:", reply_markup=main_menu)
             await state.set_state(WithdrawState.entering_new_address)
             return
         
         if await update_earnings(user_id, -total_amount, currency):
             await add_withdraw_request(user_id, amount, currency, fee, wallet_address)
-            await message.reply(f"The network fee for withdrawing {currency} is {fee:.2f} {currency}. {amount:,.2f} {currency} has been deducted from your earnings (including fee) and will be transferred to your TRC-20 wallet ({wallet_address}) within 24 hours after review.",
+            network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
+            await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. {amount:,.2f} {currency} has been deducted from your earnings (including fee) and will be transferred to your {network} wallet ({wallet_address}) within 24 hours after review.",
                                reply_markup=main_menu)
             await state.clear()
         else:
@@ -1106,8 +1241,8 @@ async def process_new_address(message: types.Message, state: FSMContext):
     await state.update_data(wallet_address=wallet_address)
     
     fee = get_withdrawal_fee(currency)
-    min_withdraw = 20 if currency == "USDT" else 40
-    await message.reply(f"Network fee for withdrawing {currency} is {fee:.2f} {currency}. Enter the amount to withdraw (minimum {min_withdraw} {currency}):",
+    min_withdrawal = get_min_withdrawal(currency)
+    await message.reply(f"Network fee for withdrawing {currency} is {fee:.4f} {currency}. Enter the amount to withdraw (minimum {min_withdrawal} {currency}):",
                        reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
@@ -1140,7 +1275,7 @@ async def edit_balance(message: types.Message, state: FSMContext):
     logging.info(f"Received message in edit_balance: {message.text}")
     try:
         parts = message.text.split()
-        if len(parts) != 3 or parts[2] not in ["TRX", "USDT"]:
+        if len(parts) != 3 or parts[2] not in ["USDT", "TRX", "BNB", "DOGE", "TON"]:
             await message.reply("Invalid input. Use format: 'user_id amount currency' (e.g., '123456 50 TRX')")
             return
         user_id = int(parts[0])
@@ -1154,6 +1289,12 @@ async def edit_balance(message: types.Message, state: FSMContext):
                 cursor.execute("UPDATE users SET balance_usdt = ? WHERE user_id = ?", (amount, user_id))
             elif currency == "TRX":
                 cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (amount, user_id))
+            elif currency == "BNB":
+                cursor.execute("UPDATE users SET balance_bnb = ? WHERE user_id = ?", (amount, user_id))
+            elif currency == "DOGE":
+                cursor.execute("UPDATE users SET balance_doge = ? WHERE user_id = ?", (amount, user_id))
+            elif currency == "TON":
+                cursor.execute("UPDATE users SET balance_ton = ? WHERE user_id = ?", (amount, user_id))
             conn.commit()
             conn.close()
             await message.reply(f"Balance updated for user {user_id} to {amount} {currency}")
@@ -1192,11 +1333,11 @@ async def process_stats(callback: types.CallbackQuery):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(user_id), SUM(balance_trx), SUM(balance_usdt) FROM users")
+        cursor.execute("SELECT COUNT(user_id), SUM(balance_usdt), SUM(balance_trx), SUM(balance_bnb), SUM(balance_doge), SUM(balance_ton) FROM users")
         stats = cursor.fetchone()
         conn.close()
-        user_count, total_trx, total_usdt = stats
-        await callback.message.reply(f"Bot Stats:\nUsers: {user_count}\nTotal TRX: {total_trx or 0:,.2f}\nTotal USDT: {total_usdt or 0:,.2f}")
+        user_count, total_usdt, total_trx, total_bnb, total_doge, total_ton = stats
+        await callback.message.reply(f"Bot Stats:\nUsers: {user_count}\nTotal USDT: {total_usdt or 0:,.2f}\nTotal TRX: {total_trx or 0:,.2f}\nTotal BNB: {total_bnb or 0:,.4f}\nTotal DOGE: {total_doge or 0:,.2f}\nTotal TON: {total_ton or 0:,.2f}")
     await callback.answer()
 
 @dispatcher.callback_query(F.data == "add_admin")
@@ -1232,7 +1373,7 @@ async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext)
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM admins WHERE user_id != 363541134")  # kanka1 حذف نشه
+        cursor.execute("SELECT user_id FROM admins WHERE user_id != 363541134")
         admins = cursor.fetchall()
         conn.close()
         
