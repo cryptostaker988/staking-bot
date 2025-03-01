@@ -356,7 +356,7 @@ async def calculate_total_earnings(user_id):
             days_passed = (now - start_date).total_seconds() / (24 * 3600)
             days_since_last = (now - last_update).total_seconds() / (24 * 3600)
             
-            profit_rate = {1: 0.02, 2: 0.03, 3: 0.04, 4: 0.04, 5: 0.03, 6: 0.02}[plan_id]
+            profit_rate = {1: 0.02, 2: 0.03, 3: 0.04, 4: 0.04, 5: 0.03, 6: 0.025}[plan_id]  # 100-Day به 2.5% تغییر کرد
             
             if duration_days is None or days_passed < duration_days:
                 total_days = int(days_passed)
@@ -704,12 +704,12 @@ stake_currency_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# منوی پلن‌های استیک
+# منوی پلن‌های استیک با اسم‌های جدید
 stake_plan_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Starter 2%"), KeyboardButton(text="Pro 3%")],
-        [KeyboardButton(text="Elite 4%"), KeyboardButton(text="40-Day Boost")],
-        [KeyboardButton(text="60-Day Gain"), KeyboardButton(text="100-Day Steady")],
+        [KeyboardButton(text="Starter 2% Forever"), KeyboardButton(text="Pro 3% Forever")],
+        [KeyboardButton(text="Elite 4% Forever"), KeyboardButton(text="40-Day 4% Daily")],
+        [KeyboardButton(text="60-Day 3% Daily"), KeyboardButton(text="100-Day 2.5% Daily")],
         [KeyboardButton(text="Back to Main Menu")]
     ],
     resize_keyboard=True
@@ -906,12 +906,12 @@ async def check_staked_command(message: types.Message):
         start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
         
         plan_desc = {
-            1: "Starter 2%: Unlimited (From 10 {currency})",
-            2: "Pro 3%: Unlimited (From 5,000 {currency})",
-            3: "Elite 4%: Unlimited (From 20,000 {currency})",
-            4: "40-Day Boost: 4% (40 days)",
-            5: "60-Day Gain: 3% (60 days)",
-            6: "100-Day Steady: 2% (100 days)"
+            1: "Starter 2% Forever: Unlimited (From 10 {currency})",
+            2: "Pro 3% Forever: Unlimited (From 5,000 {currency})",
+            3: "Elite 4% Forever: Unlimited (From 20,000 {currency})",
+            4: "40-Day 4% Daily: 4% (40 days)",
+            5: "60-Day 3% Daily: 3% (60 days)",
+            6: "100-Day 2.5% Daily: 2.5% (100 days)"
         }[plan_id].format(currency=currency)
         
         response += f"- {plan_desc}: {amount:,.2f} {currency} (Started: {start_date})\n"
@@ -1048,19 +1048,19 @@ async def process_stake_currency(message: types.Message, state: FSMContext):
     await message.reply(f"Choose a staking plan for {currency}:", reply_markup=stake_plan_menu)
     await state.set_state(StakeState.selecting_plan)
 
-@dispatcher.message(StakeState.selecting_plan, F.text.in_({"Starter 2%", "Pro 3%", "Elite 4%", "40-Day Boost", "60-Day Gain", "100-Day Steady", "Back to Main Menu"}))
+@dispatcher.message(StakeState.selecting_plan, F.text.in_({"Starter 2% Forever", "Pro 3% Forever", "Elite 4% Forever", "40-Day 4% Daily", "60-Day 3% Daily", "100-Day 2.5% Daily", "Back to Main Menu"}))
 async def process_plan_selection(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     data = await state.get_data()
     currency = data["currency"]
     
     plan_descriptions = {
-        "Starter 2%": f"Starter 2%: 2% Daily profit, unlimited duration (From 10 {currency})",
-        "Pro 3%": f"Pro 3%: 3% Daily profit, unlimited duration (From 5,000 {currency})",
-        "Elite 4%": f"Elite 4%: 4% Daily profit, unlimited duration (From 20,000 {currency})",
-        "40-Day Boost": f"40-Day Boost: 4% Daily profit for 40 days (No amount limit)",
-        "60-Day Gain": f"60-Day Gain: 3% Daily profit for 60 days (No amount limit)",
-        "100-Day Steady": f"100-Day Steady: 2% Daily profit for 100 days (No amount limit)"
+        "Starter 2% Forever": f"Starter 2% Forever: 2% Daily profit, unlimited duration (From 10 {currency})",
+        "Pro 3% Forever": f"Pro 3% Forever: 3% Daily profit, unlimited duration (From 5,000 {currency})",
+        "Elite 4% Forever": f"Elite 4% Forever: 4% Daily profit, unlimited duration (From 20,000 {currency})",
+        "40-Day 4% Daily": f"40-Day 4% Daily: 4% Daily profit for 40 days (No amount limit)",
+        "60-Day 3% Daily": f"60-Day 3% Daily: 3% Daily profit for 60 days (No amount limit)",
+        "100-Day 2.5% Daily": f"100-Day 2.5% Daily: 2.5% Daily profit for 100 days (No amount limit)"
     }
     
     if message.text == "Back to Main Menu":
@@ -1072,7 +1072,14 @@ async def process_plan_selection(message: types.Message, state: FSMContext):
     if selected_plan in plan_descriptions:
         await message.reply(plan_descriptions[selected_plan])
         await message.reply(f"Please enter the amount of {currency} to stake:", reply_markup=stake_plan_menu)
-        plan_id = {"Starter 2%": 1, "Pro 3%": 2, "Elite 4%": 3, "40-Day Boost": 4, "60-Day Gain": 5, "100-Day Steady": 6}[selected_plan]
+        plan_id = {
+            "Starter 2% Forever": 1,
+            "Pro 3% Forever": 2,
+            "Elite 4% Forever": 3,
+            "40-Day 4% Daily": 4,
+            "60-Day 3% Daily": 5,
+            "100-Day 2.5% Daily": 6
+        }[selected_plan]
         await state.update_data(plan_id=plan_id)
         await state.set_state(StakeState.waiting_for_amount)
     else:
@@ -1086,15 +1093,15 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
     currency = data["currency"]
     
     plan_names = {
-        1: "Starter 2%",
-        2: "Pro 3%",
-        3: "Elite 4%",
-        4: "40-Day Boost",
-        5: "60-Day Gain",
-        6: "100-Day Steady"
+        1: "Starter 2% Forever",
+        2: "Pro 3% Forever",
+        3: "Elite 4% Forever",
+        4: "40-Day 4% Daily",
+        5: "60-Day 3% Daily",
+        6: "100-Day 2.5% Daily"
     }
     
-    stake_menu_options = ["Starter 2%", "Pro 3%", "Elite 4%", "40-Day Boost", "60-Day Gain", "100-Day Steady", "Back to Main Menu"]
+    stake_menu_options = ["Starter 2% Forever", "Pro 3% Forever", "Elite 4% Forever", "40-Day 4% Daily", "60-Day 3% Daily", "100-Day 2.5% Daily", "Back to Main Menu"]
     if message.text in stake_menu_options:
         await process_plan_selection(message, state)
         return
