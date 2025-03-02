@@ -504,7 +504,7 @@ async def generate_payment_address(user_id, amount, currency):
     pay_currency_map = {
         "USDT": "usdttrc20",
         "TRX": "trx",
-        "BNB": "bnb_bsc",  # تغییر به "bnb_bsc" برای BSC
+        "BNB": "bnbbsc",  # تغییر به "bnbbsc" برای BSC
         "DOGE": "doge",
         "TON": "ton"
     }
@@ -523,7 +523,7 @@ async def generate_payment_address(user_id, amount, currency):
             logging.info(f"NOWPayments request: status={status}, payload={payload}, response={data}")
             if "pay_address" in data:
                 logging.info(f"Successfully generated address for {currency}: {data['pay_address']}")
-                return data["pay_address"]
+                return data['pay_address']
             else:
                 error_msg = data.get("message", "Unknown error")
                 logging.error(f"Failed to get pay_address: {error_msg}, status={status}")
@@ -747,7 +747,7 @@ async def handle_webhook(request):
     body = await request.text()
     data = json.loads(body)
 
-    computed_sig = hmac.new(IPN_SECRET.encode(), body.encode(), hashlib.sha512).hexdigest()
+    computed_sig = hmac.new(IPN_SECRET.encode(), body-Tweet this.body.encode(), hashlib.sha512).hexdigest()
     if computed_sig != signature:
         logging.error(f"Invalid signature: received={signature}, computed={computed_sig}")
         return web.Response(text="Invalid signature", status=403)
@@ -769,7 +769,7 @@ async def handle_webhook(request):
     currency = data.get("pay_currency", "").upper()
     if currency == "USDTTRC20":
         currency = "USDT"
-    elif currency == "BNB":  # اصلاح برای BSC
+    elif currency == "BNBBSC":  # اصلاح برای BSC
         currency = "BNB"
 
     min_deposit = await get_min_deposit(currency)
