@@ -504,7 +504,7 @@ async def generate_payment_address(user_id, amount, currency):
     pay_currency_map = {
         "USDT": "usdttrc20",
         "TRX": "trx",
-        "BNB": "bnb",  # تغییر به "bnb" برای BSC
+        "BNB": "bnb_bsc",  # تغییر به "bnb_bsc" برای BSC
         "DOGE": "doge",
         "TON": "ton"
     }
@@ -522,6 +522,7 @@ async def generate_payment_address(user_id, amount, currency):
             data = await resp.json()
             logging.info(f"NOWPayments request: status={status}, payload={payload}, response={data}")
             if "pay_address" in data:
+                logging.info(f"Successfully generated address for {currency}: {data['pay_address']}")
                 return data["pay_address"]
             else:
                 error_msg = data.get("message", "Unknown error")
