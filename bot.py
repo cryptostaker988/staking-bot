@@ -1,3 +1,746 @@
+import logging
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import F
+from aiogram.filters import Command
+import sqlite3
+import os
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from datetime import datetime, timedelta
+import urllib.parse
+from aiohttp import web
+import hmac
+import hashlib
+import json
+
+API_TOKEN = os.getenv("API_TOKEN", "8149978835:AAFcLTmqXz8o0VYu0zXiLQXElcsMI03J8CA")
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
+IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
+ADMIN_ID = None
+logging.basicConfig(level=logging.INFO)
+logging.info(f"Bot initialized with token: {API_TOKEN}")
+
+bot = Bot(token=API_TOKEN)
+dispatcher = Dispatcher()
+app = web.Application()
+
+db_lock = asyncio.Lock()
+
+async def db_connect():
+    async with db_lock:
+        try:
+            conn = sqlite3.connect("staking_bot.db", timeout=10)
+            return conn
+        except sqlite3.OperationalError as e:
+            logging.error(f"Failed to connect to database: {e}")
+            raise
+
+async def initialize_database():
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                            user_id INTEGER PRIMARY KEY,
+                            username TEXT,
+                            balance_usdt REAL DEFAULT 0,
+                            balance_trx REAL DEFAULT 0,
+                            balance_bnb REAL DEFAULT 0,
+                            balance_doge REAL DEFAULT 0,
+                            balance_ton REAL DEFAULT 0,
+                            earnings_usdt REAL DEFAULT 0,
+                            earnings_trx REAL DEFAULT 0,
+                            earnings_bnb REAL DEFAULT 0,
+                            earnings_doge REAL DEFAULT 0,
+                            earnings_ton REAL DEFAULT 0,
+                            last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            referrer_id INTEGER DEFAULT NULL
+                        )''')
+        
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_usdt REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_trx REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_bnb REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_doge REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance_ton REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_usdt REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_trx REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_bnb REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_doge REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN earnings_ton REAL DEFAULT 0")
+            cursor.execute("ALTER TABLE users ADD COLUMN last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            cursor.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT NULL")
+            logging.info("Updated users table with new columns.")
+        except sqlite3.OperationalError:
+            pass
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            transaction_type TEXT,
+                            amount REAL,
+                            currency TEXT,
+                            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS stakes (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            plan_id INTEGER,
+                            amount REAL,
+                            currency TEXT,
+                            start_date TIMESTAMP,
+                            duration_days INTEGER,
+                            last_earning_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            is_expired INTEGER DEFAULT 0
+                        )''')
+        
+        try:
+            cursor.execute("ALTER TABLE stakes ADD COLUMN currency TEXT")
+            logging.info("Added currency column to stakes table.")
+        except sqlite3.OperationalError:
+            pass
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS withdraw_requests (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            amount REAL,
+                            currency TEXT,
+                            fee REAL,
+                            wallet_address TEXT,
+                            status TEXT DEFAULT 'Pending',
+                            request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS wallets (
+                            user_id INTEGER,
+                            currency TEXT,
+                            wallet_address TEXT,
+                            deposit_address TEXT,
+                            PRIMARY KEY (user_id, currency)
+                        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
+                            user_id INTEGER PRIMARY KEY
+                          )''')
+        cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (363541134)")
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS limits (
+                            currency TEXT,
+                            plan_id INTEGER,
+                            min_amount REAL,
+                            type TEXT,
+                            PRIMARY KEY (currency, plan_id, type)
+                        )''')
+        
+        cursor.execute("SELECT COUNT(*) FROM limits")
+        if cursor.fetchone()[0] == 0:
+            initial_stake_limits = [
+                ("USDT", 1, 50), ("USDT", 2, 5000), ("USDT", 3, 20000), ("USDT", 4, 0), ("USDT", 5, 0), ("USDT", 6, 0),
+                ("TRX", 1, 200), ("TRX", 2, 5000), ("TRX", 3, 20000), ("TRX", 4, 0), ("TRX", 5, 0), ("TRX", 6, 0),
+                ("BNB", 1, 0.1), ("BNB", 2, 10), ("BNB", 3, 35), ("BNB", 4, 0), ("BNB", 5, 0), ("BNB", 6, 0),
+                ("DOGE", 1, 200), ("DOGE", 2, 25000), ("DOGE", 3, 100000), ("DOGE", 4, 0), ("DOGE", 5, 0), ("DOGE", 6, 0),
+                ("TON", 1, 20), ("TON", 2, 1500), ("TON", 3, 6000), ("TON", 4, 0), ("TON", 5, 0), ("TON", 6, 0)
+            ]
+            cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'stake')", initial_stake_limits)
+            
+            initial_deposit_limits = [
+                ("USDT", 0, 20.0), ("TRX", 0, 40.0), ("BNB", 0, 0.05), ("DOGE", 0, 150.0), ("TON", 0, 8.0)
+            ]
+            cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'deposit')", initial_deposit_limits)
+        
+        conn.commit()
+        conn.close()
+        logging.info("Database initialized successfully.")
+
+async def add_user(user_id, username, referrer_id=None):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        if user:
+            cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
+        else:
+            cursor.execute("INSERT INTO users (user_id, username, last_earning_update, referrer_id) VALUES (?, ?, ?, ?)", 
+                          (user_id, username, datetime.now(), referrer_id))
+        conn.commit()
+        conn.close()
+
+async def get_user(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        return user
+    return None
+
+async def is_admin(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
+    return False
+
+async def get_user_stakes(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM stakes WHERE user_id = ?", (user_id,))
+        stakes = cursor.fetchall()
+        conn.close()
+        return stakes
+    return []
+
+async def get_active_stakes(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM stakes WHERE user_id = ?", (user_id,))
+        all_stakes = cursor.fetchall()
+        conn.close()
+        
+        active_stakes = []
+        now = datetime.now()
+        for stake in all_stakes:
+            if len(stake) == 8:
+                stake_id, _, plan_id, amount, start_date, duration_days, last_update, is_expired = stake
+                currency = "USDT"
+            else:
+                stake_id, _, plan_id, amount, currency, start_date, duration_days, last_update, is_expired = stake
+            
+            start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
+            days_passed = (now - start_date).total_seconds() / (24 * 3600)
+            
+            if (duration_days is None or days_passed < duration_days) and is_expired == 0:
+                active_stakes.append(stake)
+        
+        return active_stakes
+    return []
+
+async def update_balance(user_id, amount, currency):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        if user:
+            balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user
+            if currency == "USDT":
+                new_balance = balance_usdt + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_usdt = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "TRX":
+                new_balance = balance_trx + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "BNB":
+                new_balance = balance_bnb + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_bnb = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "DOGE":
+                new_balance = balance_doge + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_doge = ? WHERE user_id = ?", (new_balance, user_id))
+            elif currency == "TON":
+                new_balance = balance_ton + amount
+                if new_balance < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET balance_ton = ? WHERE user_id = ?", (new_balance, user_id))
+            conn.commit()
+        else:
+            if currency == "USDT":
+                cursor.execute("INSERT INTO users (user_id, balance_usdt) VALUES (?, ?)", (user_id, amount))
+            elif currency == "TRX":
+                cursor.execute("INSERT INTO users (user_id, balance_trx) VALUES (?, ?)", (user_id, amount))
+            elif currency == "BNB":
+                cursor.execute("INSERT INTO users (user_id, balance_bnb) VALUES (?, ?)", (user_id, amount))
+            elif currency == "DOGE":
+                cursor.execute("INSERT INTO users (user_id, balance_doge) VALUES (?, ?)", (user_id, amount))
+            elif currency == "TON":
+                cursor.execute("INSERT INTO users (user_id, balance_ton) VALUES (?, ?)", (user_id, amount))
+            conn.commit()
+        conn.close()
+        return True
+    return False
+
+async def update_earnings(user_id, earnings_change, currency):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        if user:
+            earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user
+            if currency == "USDT":
+                new_earnings = earnings_usdt + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_usdt = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "TRX":
+                new_earnings = earnings_trx + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_trx = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "BNB":
+                new_earnings = earnings_bnb + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_bnb = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "DOGE":
+                new_earnings = earnings_doge + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_doge = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            elif currency == "TON":
+                new_earnings = earnings_ton + earnings_change
+                if new_earnings < 0:
+                    conn.close()
+                    return False
+                cursor.execute("UPDATE users SET earnings_ton = ?, last_earning_update = ? WHERE user_id = ?", 
+                              (new_earnings, datetime.now(), user_id))
+            conn.commit()
+        conn.close()
+        return True
+    return False
+
+async def add_stake(user_id, plan_id, amount, duration_days, currency):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO stakes (user_id, plan_id, amount, currency, start_date, duration_days, last_earning_update, is_expired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (user_id, plan_id, amount, currency, datetime.now(), duration_days, datetime.now(), 0))
+        conn.commit()
+        conn.close()
+        logging.info(f"Stake added: user_id={user_id}, plan_id={plan_id}, amount={amount}, currency={currency}, duration_days={duration_days}")
+        return True
+    return False
+
+async def calculate_total_earnings(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        earnings = cursor.fetchone()
+        past_earnings_usdt, past_earnings_trx, past_earnings_bnb, past_earnings_doge, past_earnings_ton = earnings if earnings else (0, 0, 0, 0, 0)
+        
+        stakes = await get_user_stakes(user_id)
+        total_new_earnings_usdt = 0
+        total_new_earnings_trx = 0
+        total_new_earnings_bnb = 0
+        total_new_earnings_doge = 0
+        total_new_earnings_ton = 0
+        now = datetime.now()
+        
+        for stake in stakes:
+            if len(stake) == 8:
+                stake_id, _, plan_id, amount, start_date, duration_days, last_update, is_expired = stake
+                currency = "USDT"
+            else:
+                stake_id, _, plan_id, amount, currency, start_date, duration_days, last_update, is_expired = stake
+            
+            start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
+            last_update = datetime.strptime(last_update, '%Y-%m-%d %H:%M:%S.%f') if isinstance(last_update, str) else last_update
+            days_passed = (now - start_date).total_seconds() / (24 * 3600)
+            days_since_last = (now - last_update).total_seconds() / (24 * 3600)
+            
+            profit_rate = {1: 0.02, 2: 0.03, 3: 0.04, 4: 0.04, 5: 0.03, 6: 0.025}[plan_id]
+            
+            if duration_days is None or days_passed < duration_days:
+                total_days = int(days_passed)
+                stake_earnings = amount * profit_rate * total_days
+                new_days = int(days_since_last)
+                if new_days > 0:
+                    new_earnings = amount * profit_rate * new_days
+                    if currency == "USDT":
+                        total_new_earnings_usdt += new_earnings
+                    elif currency == "TRX":
+                        total_new_earnings_trx += new_earnings
+                    elif currency == "BNB":
+                        total_new_earnings_bnb += new_earnings
+                    elif currency == "DOGE":
+                        total_new_earnings_doge += new_earnings
+                    elif currency == "TON":
+                        total_new_earnings_ton += new_earnings
+                    cursor.execute("UPDATE stakes SET last_earning_update = ? WHERE id = ?", (now, stake_id))
+            elif days_passed >= duration_days and is_expired == 0:
+                stake_earnings = amount * profit_rate * duration_days
+                if currency == "USDT":
+                    total_new_earnings_usdt += stake_earnings
+                elif currency == "TRX":
+                    total_new_earnings_trx += stake_earnings
+                elif currency == "BNB":
+                    total_new_earnings_bnb += stake_earnings
+                elif currency == "DOGE":
+                    total_new_earnings_doge += stake_earnings
+                elif currency == "TON":
+                    total_new_earnings_ton += stake_earnings
+                cursor.execute("UPDATE stakes SET last_earning_update = ?, is_expired = 1 WHERE id = ?", (now, stake_id))
+        
+        if total_new_earnings_usdt > 0:
+            await update_earnings(user_id, total_new_earnings_usdt, "USDT")
+        if total_new_earnings_trx > 0:
+            await update_earnings(user_id, total_new_earnings_trx, "TRX")
+        if total_new_earnings_bnb > 0:
+            await update_earnings(user_id, total_new_earnings_bnb, "BNB")
+        if total_new_earnings_doge > 0:
+            await update_earnings(user_id, total_new_earnings_doge, "DOGE")
+        if total_new_earnings_ton > 0:
+            await update_earnings(user_id, total_new_earnings_ton, "TON")
+        
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton
+    return 0, 0, 0, 0, 0
+
+async def add_transaction(user_id, transaction_type, amount, currency):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO transactions (user_id, transaction_type, amount, currency) VALUES (?, ?, ?, ?)", 
+                      (user_id, transaction_type, amount, currency))
+        conn.commit()
+        conn.close()
+        logging.info(f"Transaction added: {transaction_type} {amount} {currency} for user {user_id}")
+
+async def transfer_earnings_to_balance(user_id, amount, currency):
+    user = await get_user(user_id)
+    if user:
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
+        earnings = {
+            "USDT": earnings_usdt,
+            "TRX": earnings_trx,
+            "BNB": earnings_bnb,
+            "DOGE": earnings_doge,
+            "TON": earnings_ton
+        }[currency]
+        if amount > 0 and amount <= earnings:
+            if await update_balance(user_id, amount, currency) and await update_earnings(user_id, -amount, currency):
+                await add_transaction(user_id, "earnings_transfer", amount, currency)
+                user = await get_user(user_id)
+                new_balance = {
+                    "USDT": user[2],
+                    "TRX": user[3],
+                    "BNB": user[4],
+                    "DOGE": user[5],
+                    "TON": user[6]
+                }[currency]
+                return True, f"{amount:.2f} {currency} has been transferred to your balance. New {currency} balance: {new_balance:.2f} {currency}"
+            else:
+                return False, "Failed to transfer earnings. Try again."
+        else:
+            return False, f"You don’t have enough earnings. Your current {currency} earnings: {earnings:.2f} {currency}"
+    return False, "User not found."
+
+async def get_wallet_address(user_id, currency):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT wallet_address FROM wallets WHERE user_id = ? AND currency = ?", (user_id, currency))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    return None
+
+async def get_deposit_address(user_id, currency):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT deposit_address FROM wallets WHERE user_id = ? AND currency = ?", (user_id, currency))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    return None
+
+async def save_wallet_address(user_id, currency, wallet_address):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO wallets (user_id, currency, wallet_address) VALUES (?, ?, ?)",
+                      (user_id, currency, wallet_address))
+        conn.commit()
+        conn.close()
+
+async def save_deposit_address(user_id, currency, address):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE wallets SET deposit_address = ? WHERE user_id = ? AND currency = ?",
+                      (address, user_id, currency))
+        if cursor.rowcount == 0:
+            cursor.execute("INSERT INTO wallets (user_id, currency, deposit_address) VALUES (?, ?, ?)",
+                          (user_id, currency, address))
+        conn.commit()
+        conn.close()
+
+async def generate_payment_address(user_id, amount, currency):
+    headers = {"x-api-key": NOWPAYMENTS_API_KEY}
+    pay_currency_map = {
+        "USDT": "usdttrc20",
+        "TRX": "trx",
+        "BNB": "bsc_bnb",
+        "DOGE": "doge",
+        "TON": "ton"
+    }
+    pay_currency = pay_currency_map[currency]
+    payload = {
+        "price_amount": amount,
+        "price_currency": pay_currency,
+        "pay_currency": pay_currency,
+        "order_id": str(user_id),
+        "ipn_callback_url": "https://new-staking-bot.onrender.com/webhook"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://api.nowpayments.io/v1/payment", json=payload, headers=headers) as resp:
+            status = resp.status
+            data = await resp.json()
+            logging.info(f"NOWPayments request: status={status}, payload={payload}, response={data}")
+            if "pay_address" in data:
+                return data["pay_address"]
+            else:
+                error_msg = data.get("message", "Unknown error")
+                logging.error(f"Failed to get pay_address: {error_msg}, status={status}")
+                return None
+
+async def get_min_limit(currency, plan_id=0, limit_type="deposit"):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT min_amount FROM limits WHERE currency = ? AND plan_id = ? AND type = ?", (currency, plan_id, limit_type))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else 0
+    return 0
+
+async def update_min_limit(currency, plan_id, min_amount, limit_type):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, ?)",
+                      (currency, plan_id, min_amount, limit_type))
+        conn.commit()
+        conn.close()
+        return True
+    return False
+
+async def check_last_withdrawal(user_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, request_time FROM withdraw_requests WHERE user_id = ? ORDER BY request_time DESC LIMIT 1", (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        if result:
+            status, request_time = result
+            request_time = datetime.strptime(request_time, '%Y-%m-%d %H:%M:%S.%f')
+            return status, request_time
+        return None, None
+
+async def add_withdraw_request(user_id, amount, currency, fee, wallet_address):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO withdraw_requests (user_id, amount, currency, fee, wallet_address, status, request_time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                      (user_id, amount, currency, fee, wallet_address, "Pending", datetime.now()))
+        conn.commit()
+        conn.close()
+        logging.info(f"Withdrawal request added: user_id={user_id}, amount={amount}, currency={currency}")
+
+async def get_pending_withdrawals():
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        twelve_hours_ago = datetime.now() - timedelta(hours=12)
+        cursor.execute("SELECT * FROM withdraw_requests WHERE status = 'Pending' AND request_time >= ?", (twelve_hours_ago,))
+        requests = cursor.fetchall()
+        conn.close()
+        logging.info(f"Fetched {len(requests)} pending withdrawals.")
+        return requests
+    return []
+
+async def complete_withdrawal(request_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE withdraw_requests SET status = 'Completed' WHERE id = ?", (request_id,))
+        conn.commit()
+        conn.close()
+
+async def reject_withdrawal(request_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE withdraw_requests SET status = 'Rejected' WHERE id = ?", (request_id,))
+        conn.commit()
+        conn.close()
+
+async def get_withdrawal_details(request_id):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, amount, currency, wallet_address FROM withdraw_requests WHERE id = ?", (request_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result
+    return None
+
+def get_withdrawal_fee(currency):
+    return {
+        "USDT": 3.0,
+        "TRX": 1.1,
+        "BNB": 0.002,
+        "DOGE": 1.0,
+        "TON": 0.1
+    }[currency]
+
+async def get_min_deposit(currency):
+    return await get_min_limit(currency, 0, "deposit")
+
+async def get_min_withdrawal(currency):
+    return await get_min_limit(currency, 0, "deposit")
+
+async def send_withdrawal_report():
+    global ADMIN_ID
+    if ADMIN_ID is None:
+        logging.info("Admin ID not set, skipping report.")
+        return
+    
+    requests = await get_pending_withdrawals()
+    if not requests:
+        await bot.send_message(ADMIN_ID, "No pending withdrawals in the last 12 hours.")
+        return
+    
+    report = "Pending Withdrawals (last 12 hours):\n"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    for req in requests:
+        report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
+        keyboard.inline_keyboard.append([
+            InlineKeyboardButton(text=f"Complete ID {req[0]}", callback_data=f"complete_{req[0]}"),
+            InlineKeyboardButton(text=f"Reject ID {req[0]}", callback_data=f"reject_{req[0]}")
+        ])
+    
+    await bot.send_message(ADMIN_ID, report, reply_markup=keyboard)
+
+async def schedule_reports():
+    while True:
+        await send_withdrawal_report()
+        await asyncio.sleep(43200)
+
+class DepositState(StatesGroup):
+    selecting_currency = State()
+    waiting_for_amount = State()
+
+class WithdrawState(StatesGroup):
+    selecting_currency = State()
+    confirming_address = State()
+    entering_new_address = State()
+    entering_amount = State()
+
+class StakeState(StatesGroup):
+    selecting_currency = State()
+    selecting_plan = State()
+    waiting_for_amount = State()
+
+class EarningsState(StatesGroup):
+    choosing_action = State()
+    entering_amount = State()
+
+class AdminState(StatesGroup):
+    waiting_for_add_admin_id = State()
+    waiting_for_remove_admin_id = State()
+    waiting_for_edit_balance = State()
+    waiting_for_delete_user = State()
+    waiting_for_edit_stake_limit = State()
+    waiting_for_edit_deposit_limit = State()
+
+main_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
+        [KeyboardButton(text="💸 Stake"), KeyboardButton(text="💼 Check Balance")],
+        [KeyboardButton(text="📋 Check Staked"), KeyboardButton(text="📈 View Earnings")],
+        [KeyboardButton(text="👥 Referral Link")]
+    ],
+    resize_keyboard=True
+)
+
+deposit_currency_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Deposit USDT"), KeyboardButton(text="Deposit TRX")],
+        [KeyboardButton(text="Deposit BNB"), KeyboardButton(text="Deposit DOGE")],
+        [KeyboardButton(text="Deposit TON"), KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+stake_currency_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Stake USDT"), KeyboardButton(text="Stake TRX")],
+        [KeyboardButton(text="Stake BNB"), KeyboardButton(text="Stake DOGE")],
+        [KeyboardButton(text="Stake TON"), KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+stake_plan_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Starter 2% Forever"), KeyboardButton(text="Pro 3% Forever")],
+        [KeyboardButton(text="Elite 4% Forever"), KeyboardButton(text="40-Day 4% Daily")],
+        [KeyboardButton(text="60-Day 3% Daily"), KeyboardButton(text="100-Day 2.5% Daily")],
+        [KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+withdraw_currency_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Withdraw USDT"), KeyboardButton(text="Withdraw TRX")],
+        [KeyboardButton(text="Withdraw BNB"), KeyboardButton(text="Withdraw DOGE")],
+        [KeyboardButton(text="Withdraw TON"), KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+address_confirmation_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Yes"), KeyboardButton(text="Change Address")],
+        [KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+earnings_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Back to Main Menu"), KeyboardButton(text="Transfer to Balance")]
+    ],
+    resize_keyboard=True
+)
+
 async def handle_webhook(request):
     signature = request.headers.get("x-nowpayments-sig")
     body = await request.text()
