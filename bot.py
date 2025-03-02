@@ -15,7 +15,7 @@ import hmac
 import hashlib
 import json
 
-API_TOKEN = os.getenv("API_TOKEN", "7911530909:AAE3ltUk58R-E1tsWciN9lRcHtrPPyrxJrI")
+API_TOKEN = os.getenv("API_TOKEN", "8149978835:AAFcLTmqXz8o0VYu0zXiLQXElcsMI03J8CA")  # توکن جدید
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
 IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
 ADMIN_ID = None
@@ -812,10 +812,10 @@ async def send_welcome(message: types.Message):
     referrer_id = int(command_parts[1]) if len(command_parts) > 1 and command_parts[1].isdigit() else None
     
     await add_user(user_id, username, referrer_id)
-    if username.lower() == "kanka1":
+    if username.lower() in ["coinstakebot_admin", "tyhi87655", "kanka1"]:  # ادمین‌های جدید
         ADMIN_ID = user_id
         logging.info(f"Admin ID set to: {ADMIN_ID}")
-    await message.reply("Welcome to the Staking Bot! For each deposit by your referrals, 5% of their deposit will be added to your balance as a bonus. Choose an option:", reply_markup=main_menu)
+    await message.reply("Welcome to CoinStake! For each deposit by your referrals, 5% of their deposit will be added to your balance as a bonus. Choose an option:", reply_markup=main_menu)
 
 @dispatcher.message(Command("admin"))
 async def admin_panel(message: types.Message):
@@ -833,7 +833,7 @@ async def admin_panel(message: types.Message):
          InlineKeyboardButton(text="Bot Stats", callback_data="stats")]
     ])
     
-    if username.lower() == "kanka1":
+    if username.lower() in ["coinstakebot_admin", "tyhi87655"]:  # فقط این دوتا می‌تونن ادمین اضافه/حذف کنن
         admin_menu.inline_keyboard.append([
             InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
             InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
@@ -906,13 +906,13 @@ async def check_staked_command(message: types.Message):
         start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
         
         plan_desc = {
-            1: "Starter 2% Forever: Unlimited (From 10 {currency})",
-            2: "Pro 3% Forever: Unlimited (From 5,000 {currency})",
-            3: "Elite 4% Forever: Unlimited (From 20,000 {currency})",
+            1: "Starter 2% Forever: Unlimited",
+            2: "Pro 3% Forever: Unlimited",
+            3: "Elite 4% Forever: Unlimited",
             4: "40-Day 4% Daily: 4% (40 days)",
             5: "60-Day 3% Daily: 3% (60 days)",
             6: "100-Day 2.5% Daily: 2.5% (100 days)"
-        }[plan_id].format(currency=currency)
+        }[plan_id]
         
         response += f"- {plan_desc}: {amount:,.2f} {currency} (Started: {start_date})\n"
     await message.reply(response)
@@ -932,11 +932,11 @@ async def view_earnings_command(message: types.Message, state: FSMContext):
 async def referral_command(message: types.Message):
     user_id = message.from_user.id
     bot_info = await bot.get_me()
-    referral_link = f"https://t.me/{bot_info.username}?start={user_id}"
+    referral_link = f"https://t.me/CoinStakeBot?start={user_id}"  # آیدی ربات جدید
     
     encoded_link = urllib.parse.quote(referral_link)
     share_button = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➦ Share", url=f"https://t.me/share/url?url={encoded_link}&text=Join this staking bot!")]
+        [InlineKeyboardButton(text="➦ Share", url=f"https://t.me/share/url?url={encoded_link}&text=Join CoinStake staking bot!")]
     ])
     
     await message.reply(f"Your referral link: {referral_link}", reply_markup=share_button)
@@ -1055,9 +1055,9 @@ async def process_plan_selection(message: types.Message, state: FSMContext):
     currency = data["currency"]
     
     plan_descriptions = {
-        "Starter 2% Forever": f"Starter 2% Forever: 2% Daily profit, unlimited duration (From 10 {currency})",
-        "Pro 3% Forever": f"Pro 3% Forever: 3% Daily profit, unlimited duration (From 5,000 {currency})",
-        "Elite 4% Forever": f"Elite 4% Forever: 4% Daily profit, unlimited duration (From 20,000 {currency})",
+        "Starter 2% Forever": f"Starter 2% Forever: 2% Daily profit, unlimited duration (From {50 if currency == 'USDT' else 200 if currency == 'TRX' else 0.1 if currency == 'BNB' else 200 if currency == 'DOGE' else 20} {currency})",
+        "Pro 3% Forever": f"Pro 3% Forever: 3% Daily profit, unlimited duration (From {5000 if currency in ['USDT', 'TRX'] else 10 if currency == 'BNB' else 25000 if currency == 'DOGE' else 1500} {currency})",
+        "Elite 4% Forever": f"Elite 4% Forever: 4% Daily profit, unlimited duration (From {20000 if currency in ['USDT', 'TRX'] else 35 if currency == 'BNB' else 100000 if currency == 'DOGE' else 6000} {currency})",
         "40-Day 4% Daily": f"40-Day 4% Daily: 4% Daily profit for 40 days (No amount limit)",
         "60-Day 3% Daily": f"60-Day 3% Daily: 3% Daily profit for 60 days (No amount limit)",
         "100-Day 2.5% Daily": f"100-Day 2.5% Daily: 2.5% Daily profit for 100 days (No amount limit)"
@@ -1112,7 +1112,15 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
             await message.reply("Please enter a positive amount.", reply_markup=stake_plan_menu)
             return
         
-        min_stake = 10 if plan_id == 1 else 5000 if plan_id == 2 else 20000 if plan_id == 3 else 0
+        # حداقل‌های جدید برای هر ارز و طرح
+        min_stake = {
+            "USDT": {1: 50, 2: 5000, 3: 20000, 4: 0, 5: 0, 6: 0},
+            "TRX": {1: 200, 2: 5000, 3: 20000, 4: 0, 5: 0, 6: 0},
+            "BNB": {1: 0.1, 2: 10, 3: 35, 4: 0, 5: 0, 6: 0},
+            "DOGE": {1: 200, 2: 25000, 3: 100000, 4: 0, 5: 0, 6: 0},
+            "TON": {1: 20, 2: 1500, 3: 6000, 4: 0, 5: 0, 6: 0}
+        }[currency][plan_id]
+        
         if amount < min_stake:
             await message.reply(f"Amount must be at least {min_stake} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
             return
@@ -1272,7 +1280,7 @@ async def process_view_users(callback: types.CallbackQuery):
 @dispatcher.callback_query(F.data == "edit_balance")
 async def process_edit_balance(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.waiting_for_edit_balance)
-    await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 20 USDT'):")
+    await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 0.1 BNB'):")
     current_state = await state.get_state()
     logging.info(f"State set to: {current_state}")
     await callback.answer()
@@ -1349,8 +1357,8 @@ async def process_stats(callback: types.CallbackQuery):
 
 @dispatcher.callback_query(F.data == "add_admin")
 async def process_add_admin(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.username.lower() != "kanka1":
-        await callback.answer("Only the main admin can add admins!")
+    if callback.from_user.username.lower() not in ["coinstakebot_admin", "tyhi87655"]:
+        await callback.answer("Only the main admins (@CoinStakeBot_Admin or @Tyhi87655) can add admins!")
         return
     await callback.message.reply("Please enter the user ID you want to add as an admin:")
     await state.set_state(AdminState.waiting_for_add_admin_id)
@@ -1373,14 +1381,14 @@ async def add_admin_id(message: types.Message, state: FSMContext):
 
 @dispatcher.callback_query(F.data == "remove_admin")
 async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.username.lower() != "kanka1":
-        await callback.answer("Only the main admin can remove admins!")
+    if callback.from_user.username.lower() not in ["coinstakebot_admin", "tyhi87655"]:
+        await callback.answer("Only the main admins (@CoinStakeBot_Admin or @Tyhi87655) can remove admins!")
         return
     
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM admins WHERE user_id != 363541134")
+        cursor.execute("SELECT user_id FROM admins WHERE user_id != 363541134")  # kanka1 حذف نشه
         admins = cursor.fetchall()
         conn.close()
         
