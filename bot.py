@@ -747,7 +747,7 @@ async def handle_webhook(request):
     body = await request.text()
     data = json.loads(body)
 
-    computed_sig = hmac.new(IPN_SECRET.encode(), body-Tweet this.body.encode(), hashlib.sha512).hexdigest()
+    computed_sig = hmac.new(IPN_SECRET.encode(), body.encode(), hashlib.sha512).hexdigest()
     if computed_sig != signature:
         logging.error(f"Invalid signature: received={signature}, computed={computed_sig}")
         return web.Response(text="Invalid signature", status=403)
