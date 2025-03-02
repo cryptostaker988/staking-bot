@@ -15,7 +15,7 @@ import hmac
 import hashlib
 import json
 
-API_TOKEN = os.getenv("API_TOKEN", "8149978835:AAFcLTmqXz8o0VYu0zXiLQXElcsMI03J8CA")  # توکن جدید
+API_TOKEN = os.getenv("API_TOKEN", "8149978835:AAFcLTmqXz8o0VYu0zXiLQXElcsMI03J8CA")
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
 IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
 ADMIN_ID = None
@@ -300,7 +300,7 @@ async def update_earnings(user_id, earnings_change, currency):
                 if new_earnings < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET earnings_doge = ?, last_earning_update = ? WHERE user_id = ?", 
+                cursor.execute("UPDATE users SET earnings_doge = ?, last_earing_update = ? WHERE user_id = ?", 
                               (new_earnings, datetime.now(), user_id))
             elif currency == "TON":
                 new_earnings = earnings_ton + earnings_change
@@ -499,7 +499,7 @@ async def generate_payment_address(user_id, amount, currency):
     pay_currency_map = {
         "USDT": "usdttrc20",
         "TRX": "trx",
-        "BNB": "bnb",
+        "BNB": "bnb_bsc",  # تغییر به bnb_bsc برای BEP-20
         "DOGE": "doge",
         "TON": "ton"
     }
@@ -771,6 +771,8 @@ async def handle_webhook(request):
     currency = data.get("pay_currency", "").upper()
     if currency == "USDTTRC20":
         currency = "USDT"
+    elif currency == "BNB_BSC":  # اصلاح برای BNB در BEP-20
+        currency = "BNB"
 
     # چک کردن حداقل واریز
     min_deposit = get_min_deposit(currency)
