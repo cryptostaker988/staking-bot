@@ -504,7 +504,7 @@ async def generate_payment_address(user_id, amount, currency):
     pay_currency_map = {
         "USDT": "usdttrc20",
         "TRX": "trx",
-        "BNB": "bsc_bnb",
+        "BNB": "bnb",  # تغییر به "bnb" برای BSC
         "DOGE": "doge",
         "TON": "ton"
     }
@@ -768,7 +768,7 @@ async def handle_webhook(request):
     currency = data.get("pay_currency", "").upper()
     if currency == "USDTTRC20":
         currency = "USDT"
-    elif currency == "BSC_BNB":
+    elif currency == "BNB":  # اصلاح برای BSC
         currency = "BNB"
 
     min_deposit = await get_min_deposit(currency)
