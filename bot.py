@@ -125,8 +125,8 @@ async def initialize_database():
         cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
                             user_id INTEGER PRIMARY KEY
                           )''')
-        cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (363541134)")
-
+        # خط اضافه کردن kanka1 حذف شده
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS limits (
                             currency TEXT,
                             plan_id INTEGER,
@@ -154,6 +154,7 @@ async def initialize_database():
         conn.commit()
         conn.close()
         logging.info("Database initialized successfully.")
+
 
 async def add_user(user_id, username, referrer_id=None):
     conn = await db_connect()
@@ -808,9 +809,15 @@ async def send_welcome(message: types.Message):
     referrer_id = int(command_parts[1]) if len(command_parts) > 1 and command_parts[1].isdigit() else None
     
     await add_user(user_id, username, referrer_id)
-    if username.lower() in ["coinstakebot_admin", "tyhi87655", "kanka1"]:
+    if username.lower() in ["coinstakebot_admin", "tyhi87655"]:  # حذف kanka1
         ADMIN_ID = user_id
         logging.info(f"Admin ID set to: {ADMIN_ID}")
+        conn = await db_connect()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
+            conn.commit()
+            conn.close()
     await message.reply("Welcome to CoinStake! For each deposit by your referrals, 5% of their deposit will be added to your balance as a bonus. Choose an option:", reply_markup=main_menu)
 
 @dispatcher.message(Command("admin"))
