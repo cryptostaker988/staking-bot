@@ -22,9 +22,9 @@ ADMIN_ID = None
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Bot initialized with token: {API_TOKEN}")
 
+app = web.Application()
 bot = Bot(token=API_TOKEN)
 dispatcher = Dispatcher()
-app = web.Application()
 
 db_lock = asyncio.Lock()
 
@@ -125,7 +125,6 @@ async def initialize_database():
         cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
                             user_id INTEGER PRIMARY KEY
                           )''')
-        # خط اضافه کردن kanka1 حذف شده
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS limits (
                             currency TEXT,
@@ -154,7 +153,6 @@ async def initialize_database():
         conn.commit()
         conn.close()
         logging.info("Database initialized successfully.")
-
 
 async def add_user(user_id, username, referrer_id=None):
     conn = await db_connect()
@@ -505,7 +503,7 @@ async def generate_payment_address(user_id, amount, currency):
     pay_currency_map = {
         "USDT": "usdttrc20",
         "TRX": "trx",
-        "BNB": "bnbbsc",  # تغییر به "bnbbsc" برای BSC
+        "BNB": "bnbbsc",
         "DOGE": "doge",
         "TON": "ton"
     }
@@ -686,7 +684,7 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
         [KeyboardButton(text="💸 Stake"), KeyboardButton(text="💼 Check Balance")],
         [KeyboardButton(text="📋 Check Staked"), KeyboardButton(text="📈 View Earnings")],
-        [KeyboardButton(text="👥 Referral Link")]
+        [KeyboardButton(text="👥 Referral Link"), KeyboardButton(text="❓ Guide")]
     ],
     resize_keyboard=True
 )
@@ -770,7 +768,7 @@ async def handle_webhook(request):
     currency = data.get("pay_currency", "").upper()
     if currency == "USDTTRC20":
         currency = "USDT"
-    elif currency == "BNBBSC":  # اصلاح برای BSC
+    elif currency == "BNBBSC":
         currency = "BNB"
 
     min_deposit = await get_min_deposit(currency)
@@ -809,7 +807,7 @@ async def send_welcome(message: types.Message):
     referrer_id = int(command_parts[1]) if len(command_parts) > 1 and command_parts[1].isdigit() else None
     
     await add_user(user_id, username, referrer_id)
-    if username.lower() in ["coinstakebot_admin", "tyhi87655"]:  # حذف kanka1
+    if username.lower() in ["coinstakebot_admin", "tyhi87655"]:
         ADMIN_ID = user_id
         logging.info(f"Admin ID set to: {ADMIN_ID}")
         conn = await db_connect()
@@ -946,6 +944,29 @@ async def referral_command(message: types.Message):
     
     await message.reply(f"Your referral link: {referral_link}", reply_markup=share_button)
 
+@dispatcher.message(Command("pending"))
+async def pending_withdrawals_command(message: types.Message):
+    user_id = message.from_user.id
+    if not await is_admin(user_id):
+        await message.reply("You are not an admin!")
+        return
+    
+    requests = await get_pending_withdrawals()
+    if not requests:
+        await message.reply("No pending withdrawals in the last 12 hours.")
+        return
+    
+    report = "Pending Withdrawals (last 12 hours):\n"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    for req in requests:
+        report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
+        keyboard.inline_keyboard.append([
+            InlineKeyboardButton(text=f"Complete ID {req[0]}", callback_data=f"complete_{req[0]}"),
+            InlineKeyboardButton(text=f"Reject ID {req[0]}", callback_data=f"reject_{req[0]}")
+        ])
+    
+    await message.reply(report, reply_markup=keyboard)
+
 @dispatcher.message(F.text == "💰 Deposit")
 async def deposit(message: types.Message, state: FSMContext):
     await deposit_command(message, state)
@@ -973,6 +994,20 @@ async def view_earnings(message: types.Message, state: FSMContext):
 @dispatcher.message(F.text == "👥 Referral Link")
 async def referral_link(message: types.Message):
     await referral_command(message)
+
+@dispatcher.message(F.text == "❓ Guide")
+async def guide_command(message: types.Message):
+    guide_text = (
+        "CoinStake Guide:\n"
+        "- 💰 Deposit: Add funds to your wallet.\n"
+        "- 💳 Withdraw: Request a withdrawal.\n"
+        "- 💸 Stake: Lock funds for daily earnings.\n"
+        "- 💼 Check Balance: See your funds.\n"
+        "- 📋 Check Staked: View active stakes.\n"
+        "- 📈 View Earnings: Check your profits.\n"
+        "- 👥 Referral Link: Invite friends, earn 5% bonus."
+    )
+    await message.reply(guide_text, reply_markup=main_menu)
 
 @dispatcher.message(DepositState.selecting_currency)
 async def process_deposit_currency(message: types.Message, state: FSMContext):
