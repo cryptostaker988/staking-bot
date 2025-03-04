@@ -967,6 +967,66 @@ async def pending_withdrawals_command(message: types.Message):
     
     await message.reply(report, reply_markup=keyboard)
 
+@dispatcher.message(Command("userstats"))
+async def user_stats_command(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    if not await is_admin(user_id):
+        await message.reply("You are not an admin!")
+        return
+    
+    # دریافت user_id از پیام ادمین
+    try:
+        target_user_id = int(message.text.split()[1])
+    except (IndexError, ValueError):
+        await message.reply("Please provide a valid user ID (e.g., /userstats 123456)")
+        return
+    
+    # گرفتن اطلاعات کاربر
+    user = await get_user(target_user_id)
+    if not user:
+        await message.reply(f"No user found with ID {target_user_id}.")
+        return
+    
+    # گرفتن بالانس‌ها
+    balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
+    
+    # گرفتن سودها
+    earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(target_user_id)
+    
+    # گرفتن دیپازیت‌ها از جدول transactions
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT amount, currency, timestamp FROM transactions WHERE user_id = ? AND transaction_type = 'deposit'", (target_user_id,))
+        deposits = cursor.fetchall()
+        conn.close()
+    
+    # ساخت گزارش
+    report = f"Stats for User ID {target_user_id} (@{user[1]}):\n\n"
+    report += "Balances:\n"
+    report += f"- USDT: {balance_usdt:,.2f}\n"
+    report += f"- TRX: {balance_trx:,.2f}\n"
+    report += f"- BNB: {balance_bnb:,.4f}\n"
+    report += f"- DOGE: {balance_doge:,.2f}\n"
+    report += f"- TON: {balance_ton:,.2f}\n\n"
+    
+    report += "Earnings:\n"
+    report += f"- USDT: {earnings_usdt:,.2f}\n"
+    report += f"- TRX: {earnings_trx:,.2f}\n"
+    report += f"- BNB: {earnings_bnb:,.4f}\n"
+    report += f"- DOGE: {earnings_doge:,.2f}\n"
+    report += f"- TON: {earnings_ton:,.2f}\n\n"
+    
+    report += "Deposits:\n"
+    if deposits:
+        for deposit in deposits:
+            amount, currency, timestamp = deposit
+            report += f"- {amount:,.2f} {currency} on {timestamp}\n"
+    else:
+        report += "- No deposits found.\n"
+    
+    await message.reply(report)
+
 @dispatcher.message(F.text == "💰 Deposit")
 async def deposit(message: types.Message, state: FSMContext):
     await deposit_command(message, state)
