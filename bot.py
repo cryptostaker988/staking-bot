@@ -702,20 +702,20 @@ async def handle_webhook(request):
 
     min_deposit = await get_min_deposit(currency)
     logging.info(f"Checking deposit: amount={amount}, min_deposit={min_deposit}, condition={amount >= min_deposit}")
-
+    
     if amount < min_deposit:
         credited_amount = amount * 0.9
         await update_balance(user_id, credited_amount, currency)
         await add_transaction(user_id, "deposit", credited_amount, currency)
         if currency == "BNB":
-            await bot.send_message(user_id, f"Your deposit of {amount:.6f} {currency} was below the minimum ({min_deposit:.6f} {currency}). Due to a 10% fee, {credited_amount:.6f} {currency} has been credited!")
+            await bot.send_message(user_id, f"Your deposit of {str(amount).rstrip('0').rstrip('.')} {currency} was below the minimum ({str(min_deposit).rstrip('0').rstrip('.')}). Due to a 10% fee, {str(credited_amount).rstrip('0').rstrip('.')} {currency} has been credited!")
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit:.2f} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
         if user and user[12]:
             referrer_id = user[12]
             if currency == "BNB":
-                await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.6f} {currency}, which is less than the minimum ({min_deposit:.6f} {currency}), no referral bonus was credited.")
+                await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {str(amount).rstrip('0').rstrip('.')} {currency}, which is less than the minimum ({str(min_deposit).rstrip('0').rstrip('.')}), no referral bonus was credited.")
             else:
                 await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.2f} {currency}, which is less than the minimum ({min_deposit:.2f} {currency}), no referral bonus was credited.")
     else:
@@ -723,7 +723,7 @@ async def handle_webhook(request):
         await update_balance(user_id, credited_amount, currency)
         await add_transaction(user_id, "deposit", credited_amount, currency)
         if currency == "BNB":
-            await bot.send_message(user_id, f"Your deposit of {amount:.6f} {currency} has been credited!")
+            await bot.send_message(user_id, f"Your deposit of {str(amount).rstrip('0').rstrip('.')} {currency} has been credited!")
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
@@ -733,7 +733,7 @@ async def handle_webhook(request):
             await update_balance(referrer_id, bonus_amount, currency)
             await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
             if currency == "BNB":
-                await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.6f} {currency} as a referral bonus from user {user_id}.")
+                await bot.send_message(referrer_id, f"Your balance has been increased by {str(bonus_amount).rstrip('0').rstrip('.')} {currency} as a referral bonus from user {user_id}.")
             else:
                 await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
 
@@ -914,7 +914,7 @@ async def check_balance_command(message: types.Message):
         user = await get_user(user_id)
     
     balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
-    await message.reply(f"Your balance:\n{balance_usdt:,.2f} USDT\n{balance_trx:,.2f} TRX\n{balance_bnb:,.6f} BNB\n{balance_doge:,.2f} DOGE\n{balance_ton:,.2f} TON")
+    await message.reply(f"Your balance:\n{str(balance_usdt).rstrip('0').rstrip('.')} USDT\n{str(balance_trx).rstrip('0').rstrip('.')} TRX\n{str(balance_bnb).rstrip('0').rstrip('.')} BNB\n{str(balance_doge).rstrip('0').rstrip('.')} DOGE\n{str(balance_ton).rstrip('0').rstrip('.')} TON")
 
 @dispatcher.message(Command("checkstaked"))
 async def check_staked_command(message: types.Message):
@@ -961,7 +961,7 @@ async def view_earnings_command(message: types.Message, state: FSMContext):
     user = await get_user(user_id)
     if user:
         earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
-        await message.reply(f"Your total earnings:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.6f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON", reply_markup=earnings_menu)
+        await message.reply(f"Your total earnings:\n{str(earnings_usdt).rstrip('0').rstrip('.')} USDT\n{str(earnings_trx).rstrip('0').rstrip('.')} TRX\n{str(earnings_bnb).rstrip('0').rstrip('.')} BNB\n{str(earnings_doge).rstrip('0').rstrip('.')} DOGE\n{str(earnings_ton).rstrip('0').rstrip('.')} TON", reply_markup=earnings_menu)
         await state.set_state(EarningsState.choosing_action)
     else:
         await message.reply("User not found.")
@@ -1035,27 +1035,24 @@ async def user_stats_command(message: types.Message, state: FSMContext):
     
     report = f"Stats for User ID {target_user_id} (@{user[1]}):\n\n"
     report += "Balances:\n"
-    report += f"- USDT: {balance_usdt:,.2f}\n"
-    report += f"- TRX: {balance_trx:,.2f}\n"
-    report += f"- BNB: {balance_bnb:,.6f}\n"
-    report += f"- DOGE: {balance_doge:,.2f}\n"
-    report += f"- TON: {balance_ton:,.2f}\n\n"
+    report += f"- USDT: {str(balance_usdt).rstrip('0').rstrip('.')}\n"
+    report += f"- TRX: {str(balance_trx).rstrip('0').rstrip('.')}\n"
+    report += f"- BNB: {str(balance_bnb).rstrip('0').rstrip('.')}\n"
+    report += f"- DOGE: {str(balance_doge).rstrip('0').rstrip('.')}\n"
+    report += f"- TON: {str(balance_ton).rstrip('0').rstrip('.')}\n\n"
     
     report += "Earnings:\n"
-    report += f"- USDT: {earnings_usdt:,.2f}\n"
-    report += f"- TRX: {earnings_trx:,.2f}\n"
-    report += f"- BNB: {earnings_bnb:,.6f}\n"
-    report += f"- DOGE: {earnings_doge:,.2f}\n"
-    report += f"- TON: {earnings_ton:,.2f}\n\n"
+    report += f"- USDT: {str(earnings_usdt).rstrip('0').rstrip('.')}\n"
+    report += f"- TRX: {str(earnings_trx).rstrip('0').rstrip('.')}\n"
+    report += f"- BNB: {str(earnings_bnb).rstrip('0').rstrip('.')}\n"
+    report += f"- DOGE: {str(earnings_doge).rstrip('0').rstrip('.')}\n"
+    report += f"- TON: {str(earnings_ton).rstrip('0').rstrip('.')}\n\n"
     
     report += "Deposits:\n"
     if deposits:
         for deposit in deposits:
             amount, currency, timestamp = deposit
-            if currency == "BNB":
-                report += f"- {amount:,.6f} {currency} on {timestamp}\n"
-            else:
-                report += f"- {amount:,.2f} {currency} on {timestamp}\n"
+            report += f"- {str(amount).rstrip('0').rstrip('.')} {currency} on {timestamp}\n"
     else:
         report += "- No deposits found.\n"
     
@@ -1144,7 +1141,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
         min_deposit = await get_min_deposit(currency)
         if amount < min_deposit:
             if currency == "BNB":
-                await message.reply(f"Minimum deposit for {currency} is {min_deposit:.6f} {currency}. Please enter a higher amount.", reply_markup=main_menu)
+                await message.reply(f"Minimum deposit for {currency} is {str(min_deposit).rstrip('0').rstrip('.')} {currency}. Please enter a higher amount.", reply_markup=main_menu)
             else:
                 await message.reply(f"Minimum deposit for {currency} is {min_deposit:.2f} {currency}. Please enter a higher amount.", reply_markup=main_menu)
             return
@@ -1154,7 +1151,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             await save_deposit_address(user_id, currency, address)
             network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
             if currency == "BNB":
-                await message.reply(f"Please send {amount:.6f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+                await message.reply(f"Please send {str(amount).rstrip('0').rstrip('.')} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
             else:
                 await message.reply(f"Please send {amount:.2f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
             await message.reply(address)
