@@ -740,7 +740,7 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit:.2f} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[13] and isinstance(user[13], int):  # تغییر به user[13]
+        if user and user[13] and isinstance(user[13], int):
             referrer_id = user[13]
             logging.info(f"No bonus for referrer {referrer_id} due to below-minimum deposit")
             if currency == "BNB":
@@ -757,21 +757,24 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[13] and isinstance(user[13], int):  # تغییر به user[13]
+        if user and user[13] and isinstance(user[13], int):
             referrer_id = user[13]
             bonus_amount = credited_amount * 0.05
-            logging.info(f"Crediting referral bonus: {bonus_amount} {currency} to referrer {referrer_id}")
+            # تغییر فرمت لاگ به اعشار
+            logging.info(f"Crediting referral bonus: {bonus_amount:.5f} {currency} to referrer {referrer_id}")
             success = await update_balance(referrer_id, bonus_amount, currency)
             if success:
                 await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
                 if currency == "BNB":
-                    await bot.send_message(referrer_id, f"Your balance has been increased by {str(bonus_amount).rstrip('0').rstrip('.')} {currency} as a referral bonus from user {user_id}.")
+                    # تغییر فرمت پیام به اعشار
+                    await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.5f} {currency} as a referral bonus from user {user_id}.")
                 else:
                     await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
             else:
-                logging.error(f"Failed to credit bonus {bonus_amount} {currency} to referrer {referrer_id}")
+                # تغییر فرمت لاگ به اعشار
+                logging.error(f"Failed to credit bonus {bonus_amount:.5f} {currency} to referrer {referrer_id}")
         else:
-            logging.warning(f"No valid referrer_id for user {user_id}: {user[13] if user else 'No user'}")  # تغییر به user[13]
+            logging.warning(f"No valid referrer_id for user {user_id}: {user[13] if user else 'No user'}")
 
     conn = await db_connect()
     if conn:
