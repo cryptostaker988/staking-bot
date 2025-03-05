@@ -712,7 +712,7 @@ async def handle_webhook(request):
             logging.info(f"Payment {payment_id} already processed, skipping.")
             conn.close()
             return web.Response(text="Success")
-        conn.close()  # بستن اتصال اگه پردازش نکنیم
+        conn.close()
 
     user_id = int(data.get("order_id"))
     amount = data.get("actually_paid") or data.get("pay_amount") or data.get("price_amount")
@@ -740,11 +740,8 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit:.2f} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[12]:
+        if user and user[12] and isinstance(user[12], int):  # فقط اگه referrer_id عدد باشه
             referrer_id = user[12]
-            if not isinstance(referrer_id, int):
-                referrer_id = 7509858897
-                logging.warning(f"Invalid referrer_id for user {user_id}: {user[12]}, using default {referrer_id}")
             logging.info(f"No bonus for referrer {referrer_id} due to below-minimum deposit")
             if currency == "BNB":
                 await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {str(amount).rstrip('0').rstrip('.')} {currency}, which is less than the minimum ({str(min_deposit).rstrip('0').rstrip('.')}), no referral bonus was credited.")
@@ -760,11 +757,8 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[12]:
+        if user and user[12] and isinstance(user[12], int):  # فقط اگه referrer_id عدد باشه
             referrer_id = user[12]
-            if not isinstance(referrer_id, int):
-                referrer_id = 7509858897
-                logging.warning(f"Invalid referrer_id for user {user_id}: {user[12]}, using default {referrer_id}")
             bonus_amount = credited_amount * 0.05
             logging.info(f"Crediting referral bonus: {bonus_amount} {currency} to referrer {referrer_id}")
             success = await update_balance(referrer_id, bonus_amount, currency)
@@ -779,7 +773,6 @@ async def handle_webhook(request):
         else:
             logging.warning(f"No valid referrer_id for user {user_id}: {user[12] if user else 'No user'}")
 
-    # حالا که پردازش موفق بود، payment_id رو ثبت می‌کنیم
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
