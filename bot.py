@@ -138,8 +138,16 @@ async def initialize_database():
                             PRIMARY KEY (currency, plan_id, type)
                         )''')
         
-        cursor.execute("SELECT COUNT(*) FROM limits")
-        if cursor.fetchone()[0] == 0:
+        cursor.execute("SELECT COUNT(*) FROM limits WHERE type = 'deposit'")
+        if cursor.fetchone()[0] == 0:  # فقط اگه هیچ حداقل دیپازیتی نباشه
+            initial_deposit_limits = [
+                ("USDT", 0, 20.0), ("TRX", 0, 40.0), ("BNB", 0, 0.02), ("DOGE", 0, 150.0), ("TON", 0, 8.0)
+            ]
+            cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'deposit')", initial_deposit_limits)
+            logging.info("Initialized default deposit limits.")
+        
+        cursor.execute("SELECT COUNT(*) FROM limits WHERE type = 'stake'")
+        if cursor.fetchone()[0] == 0:  # فقط اگه هیچ حداقل استیکی نباشه
             initial_stake_limits = [
                 ("USDT", 1, 50), ("USDT", 2, 5000), ("USDT", 3, 20000), ("USDT", 4, 0), ("USDT", 5, 0), ("USDT", 6, 0),
                 ("TRX", 1, 200), ("TRX", 2, 20000), ("TRX", 3, 80000), ("TRX", 4, 0), ("TRX", 5, 0), ("TRX", 6, 0),
@@ -148,11 +156,12 @@ async def initialize_database():
                 ("TON", 1, 20), ("TON", 2, 1500), ("TON", 3, 6000), ("TON", 4, 0), ("TON", 5, 0), ("TON", 6, 0)
             ]
             cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'stake')", initial_stake_limits)
-            
-            initial_deposit_limits = [
-                ("USDT", 0, 20.0), ("TRX", 0, 40.0), ("BNB", 0, 0.02), ("DOGE", 0, 150.0), ("TON", 0, 8.0)
-            ]
-            cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'deposit')", initial_deposit_limits)
+            logging.info("Initialized default stake limits.")
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS processed_payments (
+                            payment_id INTEGER PRIMARY KEY,
+                            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )''')
         
         conn.commit()
         conn.close()
