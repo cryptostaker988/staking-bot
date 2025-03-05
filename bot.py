@@ -748,6 +748,13 @@ async def handle_webhook(request):
 
 app.router.add_post('/webhook', handle_webhook)
 
+async def handle_telegram_webhook(request):
+    update = types.Update(**(await request.json()))
+    await dispatcher.feed_update(bot, update)
+    return web.Response(text="OK")
+
+app.router.add_post('/telegram-webhook', handle_telegram_webhook)
+
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
@@ -1629,13 +1636,14 @@ async def main():
     logging.info("Starting bot...")
     await initialize_database()
     asyncio.create_task(schedule_reports())
-    await dispatcher.start_polling(bot)
-    logging.info("Bot started polling.")
+    webhook_url = "https://new-staking-bot.onrender.com/telegram-webhook"  # آدرس سرور Render
+    await bot.set_webhook(webhook_url)
+    logging.info(f"Webhook set to {webhook_url}")
 
 async def run_web():
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 8000)))
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))  # پورت 10000 که Render تشخیص داده
     await site.start()
     logging.info("Web server started.")
 
