@@ -167,8 +167,9 @@ async def add_user(user_id, username, referrer_id=None):
         if user:
             cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, int(user_id)))
         else:
+            logging.info(f"Adding new user {user_id} with referrer_id {referrer_id}")
             cursor.execute("INSERT INTO users (user_id, username, last_earning_update, referrer_id) VALUES (?, ?, ?, ?)", 
-                          (int(user_id), username, datetime.now(), referrer_id if referrer_id is None else int(referrer_id)))
+                          (int(user_id), username, datetime.now(), referrer_id if referrer_id is None or isinstance(referrer_id, int) else None))
         conn.commit()
         conn.close()
 
@@ -702,7 +703,7 @@ async def handle_webhook(request):
 
     min_deposit = await get_min_deposit(currency)
     logging.info(f"Checking deposit: amount={amount}, min_deposit={min_deposit}, condition={amount >= min_deposit}")
-   
+       
     if amount < min_deposit:
         credited_amount = amount * 0.9
         logging.info(f"Deposit below minimum: crediting {credited_amount} {currency} to user {user_id}")
@@ -713,8 +714,11 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit:.2f} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[12] and isinstance(user[12], int):  # چک می‌کنیم که referrer_id عدد باشه
+        if user and user[12]:
             referrer_id = user[12]
+            if not isinstance(referrer_id, int):  # اگه referrer_id عدد نبود
+                referrer_id = 7509858897  # ID ادمین به‌عنوان پیش‌فرض
+                logging.warning(f"Invalid referrer_id for user {user_id}: {user[12]}, using default {referrer_id}")
             logging.info(f"No bonus for referrer {referrer_id} due to below-minimum deposit")
             if currency == "BNB":
                 await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {str(amount).rstrip('0').rstrip('.')} {currency}, which is less than the minimum ({str(min_deposit).rstrip('0').rstrip('.')}), no referral bonus was credited.")
@@ -730,8 +734,11 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[12] and isinstance(user[12], int):  # چک می‌کنیم که referrer_id عدد باشه
+        if user and user[12]:
             referrer_id = user[12]
+            if not isinstance(referrer_id, int):  # اگه referrer_id عدد نبود
+                referrer_id = 7509858897  # ID ادمین به‌عنوان پیش‌فرض
+                logging.warning(f"Invalid referrer_id for user {user_id}: {user[12]}, using default {referrer_id}")
             bonus_amount = credited_amount * 0.05
             logging.info(f"Crediting referral bonus: {bonus_amount} {currency} to referrer {referrer_id}")
             success = await update_balance(referrer_id, bonus_amount, currency)
