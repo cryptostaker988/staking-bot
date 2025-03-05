@@ -698,6 +698,19 @@ async def handle_webhook(request):
 
     logging.info(f"Webhook received: {data}")
 
+    payment_id = data.get("payment_id")
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT payment_id FROM processed_payments WHERE payment_id = ?", (payment_id,))
+        if cursor.fetchone():
+            logging.info(f"Payment {payment_id} already processed, skipping.")
+            conn.close()
+            return web.Response(text="Success")
+        cursor.execute("INSERT INTO processed_payments (payment_id) VALUES (?)", (payment_id,))
+        conn.commit()
+        conn.close()
+
     status = data.get("payment_status")
     if status not in ["confirmed", "finished", "partially_paid"]:
         logging.info(f"Payment status '{status}' not confirmed yet, skipping.")
@@ -718,7 +731,7 @@ async def handle_webhook(request):
 
     min_deposit = await get_min_deposit(currency)
     logging.info(f"Checking deposit: amount={amount}, min_deposit={min_deposit}, condition={amount >= min_deposit}")
-       
+
     if amount < min_deposit:
         credited_amount = amount * 0.9
         logging.info(f"Deposit below minimum: crediting {credited_amount} {currency} to user {user_id}")
@@ -731,8 +744,8 @@ async def handle_webhook(request):
         user = await get_user(user_id)
         if user and user[12]:
             referrer_id = user[12]
-            if not isinstance(referrer_id, int):  # اگه referrer_id عدد نبود
-                referrer_id = 7509858897  # ID ادمین به‌عنوان پیش‌فرض
+            if not isinstance(referrer_id, int):
+                referrer_id = 7509858897
                 logging.warning(f"Invalid referrer_id for user {user_id}: {user[12]}, using default {referrer_id}")
             logging.info(f"No bonus for referrer {referrer_id} due to below-minimum deposit")
             if currency == "BNB":
@@ -751,8 +764,8 @@ async def handle_webhook(request):
         user = await get_user(user_id)
         if user and user[12]:
             referrer_id = user[12]
-            if not isinstance(referrer_id, int):  # اگه referrer_id عدد نبود
-                referrer_id = 7509858897  # ID ادمین به‌عنوان پیش‌فرض
+            if not isinstance(referrer_id, int):
+                referrer_id = 7509858897
                 logging.warning(f"Invalid referrer_id for user {user_id}: {user[12]}, using default {referrer_id}")
             bonus_amount = credited_amount * 0.05
             logging.info(f"Crediting referral bonus: {bonus_amount} {currency} to referrer {referrer_id}")
