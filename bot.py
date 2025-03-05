@@ -967,7 +967,8 @@ async def check_balance_command(message: types.Message):
         user = await get_user(user_id)
     
     balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
-    await message.reply(f"Your balance:\n{str(balance_usdt).rstrip('0').rstrip('.')} USDT\n{str(balance_trx).rstrip('0').rstrip('.')} TRX\n{str(balance_bnb).rstrip('0').rstrip('.')} BNB\n{str(balance_doge).rstrip('0').rstrip('.')} DOGE\n{str(balance_ton).rstrip('0').rstrip('.')} TON")
+    # تغییر فرمت به اعشاری برای BNB
+    await message.reply(f"Your balance:\n{balance_usdt:.2f} USDT\n{balance_trx:.2f} TRX\n{balance_bnb:.5f} BNB\n{balance_doge:.2f} DOGE\n{balance_ton:.2f} TON")
 
 @dispatcher.message(Command("checkstaked"))
 async def check_staked_command(message: types.Message):
