@@ -32,7 +32,8 @@ async def db_connect():
     async with db_lock:
         for attempt in range(3):
             try:
-                conn = sqlite3.connect("staking_bot.db", timeout=30)
+                # تغییر مسیر به دیسک Render
+                conn = sqlite3.connect("/opt/render/project/db/staking_bot.db", timeout=30)
                 return conn
             except sqlite3.OperationalError as e:
                 logging.error(f"Database connection attempt {attempt + 1} failed: {e}")
