@@ -138,7 +138,7 @@ async def initialize_database():
         if cursor.fetchone()[0] == 0:
             initial_stake_limits = [
                 ("USDT", 1, 50), ("USDT", 2, 5000), ("USDT", 3, 20000), ("USDT", 4, 0), ("USDT", 5, 0), ("USDT", 6, 0),
-                ("TRX", 1, 200), ("TRX", 2, 5000), ("TRX", 3, 20000), ("TRX", 4, 0), ("TRX", 5, 0), ("TRX", 6, 0),
+                ("TRX", 1, 200), ("TRX", 2, 20000), ("TRX", 3, 80000), ("TRX", 4, 0), ("TRX", 5, 0), ("TRX", 6, 0),
                 ("BNB", 1, 0.1), ("BNB", 2, 10), ("BNB", 3, 35), ("BNB", 4, 0), ("BNB", 5, 0), ("BNB", 6, 0),
                 ("DOGE", 1, 200), ("DOGE", 2, 25000), ("DOGE", 3, 100000), ("DOGE", 4, 0), ("DOGE", 5, 0), ("DOGE", 6, 0),
                 ("TON", 1, 20), ("TON", 2, 1500), ("TON", 3, 6000), ("TON", 4, 0), ("TON", 5, 0), ("TON", 6, 0)
@@ -146,7 +146,7 @@ async def initialize_database():
             cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'stake')", initial_stake_limits)
             
             initial_deposit_limits = [
-                ("USDT", 0, 20.0), ("TRX", 0, 40.0), ("BNB", 0, 0.05), ("DOGE", 0, 150.0), ("TON", 0, 8.0)
+                ("USDT", 0, 20.0), ("TRX", 0, 40.0), ("BNB", 0, 0.02), ("DOGE", 0, 150.0), ("TON", 0, 8.0)
             ]
             cursor.executemany("INSERT INTO limits (currency, plan_id, min_amount, type) VALUES (?, ?, ?, 'deposit')", initial_deposit_limits)
         
@@ -772,27 +772,41 @@ async def handle_webhook(request):
         currency = "BNB"
 
     min_deposit = await get_min_deposit(currency)
+    logging.info(f"Checking deposit: amount={amount}, min_deposit={min_deposit}, condition={amount >= min_deposit}")
+
     if amount < min_deposit:
         credited_amount = amount * 0.9
         await update_balance(user_id, credited_amount, currency)
         await add_transaction(user_id, "deposit", credited_amount, currency)
-        await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
+        if currency == "BNB":
+            await bot.send_message(user_id, f"Your deposit of {amount:.6f} {currency} was below the minimum ({min_deposit:.6f} {currency}). Due to a 10% fee, {credited_amount:.6f} {currency} has been credited!")
+        else:
+            await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit:.2f} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
         if user and user[12]:
             referrer_id = user[12]
-            await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.2f} {currency}, which is less than the minimum ({min_deposit} {currency}), no referral bonus was credited.")
+            if currency == "BNB":
+                await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.6f} {currency}, which is less than the minimum ({min_deposit:.6f} {currency}), no referral bonus was credited.")
+            else:
+                await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.2f} {currency}, which is less than the minimum ({min_deposit:.2f} {currency}), no referral bonus was credited.")
     else:
         credited_amount = amount
-        await update_balance(user_id, amount, currency)
-        await add_transaction(user_id, "deposit", amount, currency)
-        await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
+        await update_balance(user_id, credited_amount, currency)
+        await add_transaction(user_id, "deposit", credited_amount, currency)
+        if currency == "BNB":
+            await bot.send_message(user_id, f"Your deposit of {amount:.6f} {currency} has been credited!")
+        else:
+            await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
         if user and user[12]:
             referrer_id = user[12]
             bonus_amount = credited_amount * 0.05
             await update_balance(referrer_id, bonus_amount, currency)
             await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
-            await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
+            if currency == "BNB":
+                await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.6f} {currency} as a referral bonus from user {user_id}.")
+            else:
+                await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
 
     return web.Response(text="Success")
 
@@ -882,7 +896,7 @@ async def check_balance_command(message: types.Message):
         user = await get_user(user_id)
     
     balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
-    await message.reply(f"Your balance:\n{balance_usdt:,.2f} USDT\n{balance_trx:,.2f} TRX\n{balance_bnb:,.4f} BNB\n{balance_doge:,.2f} DOGE\n{balance_ton:,.2f} TON")
+    await message.reply(f"Your balance:\n{balance_usdt:,.2f} USDT\n{balance_trx:,.2f} TRX\n{balance_bnb:,.6f} BNB\n{balance_doge:,.2f} DOGE\n{balance_ton:,.2f} TON")
 
 @dispatcher.message(Command("checkstaked"))
 async def check_staked_command(message: types.Message):
@@ -926,7 +940,7 @@ async def view_earnings_command(message: types.Message, state: FSMContext):
     user = await get_user(user_id)
     if user:
         earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
-        await message.reply(f"Your total earnings:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.4f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON", reply_markup=earnings_menu)
+        await message.reply(f"Your total earnings:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.6f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON", reply_markup=earnings_menu)
         await state.set_state(EarningsState.choosing_action)
     else:
         await message.reply("User not found.")
@@ -974,26 +988,20 @@ async def user_stats_command(message: types.Message, state: FSMContext):
         await message.reply("You are not an admin!")
         return
     
-    # دریافت user_id از پیام ادمین
     try:
         target_user_id = int(message.text.split()[1])
     except (IndexError, ValueError):
         await message.reply("Please provide a valid user ID (e.g., /userstats 123456)")
         return
     
-    # گرفتن اطلاعات کاربر
     user = await get_user(target_user_id)
     if not user:
         await message.reply(f"No user found with ID {target_user_id}.")
         return
     
-    # گرفتن بالانس‌ها
     balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
-    
-    # گرفتن سودها
     earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(target_user_id)
     
-    # گرفتن دیپازیت‌ها از جدول transactions
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
@@ -1001,19 +1009,18 @@ async def user_stats_command(message: types.Message, state: FSMContext):
         deposits = cursor.fetchall()
         conn.close()
     
-    # ساخت گزارش
     report = f"Stats for User ID {target_user_id} (@{user[1]}):\n\n"
     report += "Balances:\n"
     report += f"- USDT: {balance_usdt:,.2f}\n"
     report += f"- TRX: {balance_trx:,.2f}\n"
-    report += f"- BNB: {balance_bnb:,.4f}\n"
+    report += f"- BNB: {balance_bnb:,.6f}\n"
     report += f"- DOGE: {balance_doge:,.2f}\n"
     report += f"- TON: {balance_ton:,.2f}\n\n"
     
     report += "Earnings:\n"
     report += f"- USDT: {earnings_usdt:,.2f}\n"
     report += f"- TRX: {earnings_trx:,.2f}\n"
-    report += f"- BNB: {earnings_bnb:,.4f}\n"
+    report += f"- BNB: {earnings_bnb:,.6f}\n"
     report += f"- DOGE: {earnings_doge:,.2f}\n"
     report += f"- TON: {earnings_ton:,.2f}\n\n"
     
@@ -1021,7 +1028,10 @@ async def user_stats_command(message: types.Message, state: FSMContext):
     if deposits:
         for deposit in deposits:
             amount, currency, timestamp = deposit
-            report += f"- {amount:,.2f} {currency} on {timestamp}\n"
+            if currency == "BNB":
+                report += f"- {amount:,.6f} {currency} on {timestamp}\n"
+            else:
+                report += f"- {amount:,.2f} {currency} on {timestamp}\n"
     else:
         report += "- No deposits found.\n"
     
@@ -1109,14 +1119,20 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
         
         min_deposit = await get_min_deposit(currency)
         if amount < min_deposit:
-            await message.reply(f"Minimum deposit for {currency} is {min_deposit} {currency}. Please enter a higher amount.", reply_markup=main_menu)
+            if currency == "BNB":
+                await message.reply(f"Minimum deposit for {currency} is {min_deposit:.6f} {currency}. Please enter a higher amount.", reply_markup=main_menu)
+            else:
+                await message.reply(f"Minimum deposit for {currency} is {min_deposit:.2f} {currency}. Please enter a higher amount.", reply_markup=main_menu)
             return
         
         address = await generate_payment_address(user_id, amount, currency)
         if address:
             await save_deposit_address(user_id, currency, address)
             network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
-            await message.reply(f"Please send {amount:.2f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+            if currency == "BNB":
+                await message.reply(f"Please send {amount:.6f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+            else:
+                await message.reply(f"Please send {amount:.2f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
             await message.reply(address)
         else:
             await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
