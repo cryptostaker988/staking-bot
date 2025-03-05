@@ -30,12 +30,16 @@ db_lock = asyncio.Lock()
 
 async def db_connect():
     async with db_lock:
-        try:
-            conn = sqlite3.connect("staking_bot.db", timeout=10)
-            return conn
-        except sqlite3.OperationalError as e:
-            logging.error(f"Failed to connect to database: {e}")
-            raise
+        for attempt in range(3):
+            try:
+                conn = sqlite3.connect("staking_bot.db", timeout=30)
+                return conn
+            except sqlite3.OperationalError as e:
+                logging.error(f"Database connection attempt {attempt + 1} failed: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(1)
+                else:
+                    raise
 
 async def initialize_database():
     conn = await db_connect()
@@ -158,13 +162,13 @@ async def add_user(user_id, username, referrer_id=None):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (int(user_id),))
         user = cursor.fetchone()
         if user:
-            cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
+            cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, int(user_id)))
         else:
             cursor.execute("INSERT INTO users (user_id, username, last_earning_update, referrer_id) VALUES (?, ?, ?, ?)", 
-                          (user_id, username, datetime.now(), referrer_id))
+                          (int(user_id), username, datetime.now(), referrer_id if referrer_id is None else int(referrer_id)))
         conn.commit()
         conn.close()
 
@@ -172,7 +176,7 @@ async def get_user(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (int(user_id),))
         user = cursor.fetchone()
         conn.close()
         return user
@@ -182,7 +186,7 @@ async def is_admin(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (int(user_id),))
         result = cursor.fetchone()
         conn.close()
         return result is not None
@@ -192,7 +196,7 @@ async def get_user_stakes(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM stakes WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT * FROM stakes WHERE user_id = ?", (int(user_id),))
         stakes = cursor.fetchall()
         conn.close()
         return stakes
@@ -202,7 +206,7 @@ async def get_active_stakes(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM stakes WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT * FROM stakes WHERE user_id = ?", (int(user_id),))
         all_stakes = cursor.fetchall()
         conn.close()
         
@@ -228,7 +232,7 @@ async def update_balance(user_id, amount, currency):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton FROM users WHERE user_id = ?", (int(user_id),))
         user = cursor.fetchone()
         if user:
             balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user
@@ -237,44 +241,49 @@ async def update_balance(user_id, amount, currency):
                 if new_balance < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET balance_usdt = ? WHERE user_id = ?", (new_balance, user_id))
+                cursor.execute("UPDATE users SET balance_usdt = ? WHERE user_id = ?", (new_balance, int(user_id)))
             elif currency == "TRX":
                 new_balance = balance_trx + amount
                 if new_balance < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (new_balance, user_id))
+                cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (new_balance, int(user_id)))
             elif currency == "BNB":
                 new_balance = balance_bnb + amount
                 if new_balance < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET balance_bnb = ? WHERE user_id = ?", (new_balance, user_id))
+                cursor.execute("UPDATE users SET balance_bnb = ? WHERE user_id = ?", (new_balance, int(user_id)))
             elif currency == "DOGE":
                 new_balance = balance_doge + amount
                 if new_balance < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET balance_doge = ? WHERE user_id = ?", (new_balance, user_id))
+                cursor.execute("UPDATE users SET balance_doge = ? WHERE user_id = ?", (new_balance, int(user_id)))
             elif currency == "TON":
                 new_balance = balance_ton + amount
                 if new_balance < 0:
                     conn.close()
                     return False
-                cursor.execute("UPDATE users SET balance_ton = ? WHERE user_id = ?", (new_balance, user_id))
+                cursor.execute("UPDATE users SET balance_ton = ? WHERE user_id = ?", (new_balance, int(user_id)))
             conn.commit()
         else:
-            if currency == "USDT":
-                cursor.execute("INSERT INTO users (user_id, balance_usdt) VALUES (?, ?)", (user_id, amount))
-            elif currency == "TRX":
-                cursor.execute("INSERT INTO users (user_id, balance_trx) VALUES (?, ?)", (user_id, amount))
-            elif currency == "BNB":
-                cursor.execute("INSERT INTO users (user_id, balance_bnb) VALUES (?, ?)", (user_id, amount))
-            elif currency == "DOGE":
-                cursor.execute("INSERT INTO users (user_id, balance_doge) VALUES (?, ?)", (user_id, amount))
-            elif currency == "TON":
-                cursor.execute("INSERT INTO users (user_id, balance_ton) VALUES (?, ?)", (user_id, amount))
-            conn.commit()
+            try:
+                if currency == "USDT":
+                    cursor.execute("INSERT INTO users (user_id, balance_usdt) VALUES (?, ?)", (int(user_id), amount))
+                elif currency == "TRX":
+                    cursor.execute("INSERT INTO users (user_id, balance_trx) VALUES (?, ?)", (int(user_id), amount))
+                elif currency == "BNB":
+                    cursor.execute("INSERT INTO users (user_id, balance_bnb) VALUES (?, ?)", (int(user_id), amount))
+                elif currency == "DOGE":
+                    cursor.execute("INSERT INTO users (user_id, balance_doge) VALUES (?, ?)", (int(user_id), amount))
+                elif currency == "TON":
+                    cursor.execute("INSERT INTO users (user_id, balance_ton) VALUES (?, ?)", (int(user_id), amount))
+                conn.commit()
+            except sqlite3.IntegrityError as e:
+                logging.error(f"Failed to insert new user {user_id} for {currency}: {e}")
+                conn.close()
+                return False
         conn.close()
         return True
     return False
@@ -283,7 +292,7 @@ async def update_earnings(user_id, earnings_change, currency):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (int(user_id),))
         user = cursor.fetchone()
         if user:
             earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user
@@ -293,35 +302,35 @@ async def update_earnings(user_id, earnings_change, currency):
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET earnings_usdt = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), user_id))
+                              (new_earnings, datetime.now(), int(user_id)))
             elif currency == "TRX":
                 new_earnings = earnings_trx + earnings_change
                 if new_earnings < 0:
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET earnings_trx = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), user_id))
+                              (new_earnings, datetime.now(), int(user_id)))
             elif currency == "BNB":
                 new_earnings = earnings_bnb + earnings_change
                 if new_earnings < 0:
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET earnings_bnb = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), user_id))
+                              (new_earnings, datetime.now(), int(user_id)))
             elif currency == "DOGE":
                 new_earnings = earnings_doge + earnings_change
                 if new_earnings < 0:
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET earnings_doge = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), user_id))
+                              (new_earnings, datetime.now(), int(user_id)))
             elif currency == "TON":
                 new_earnings = earnings_ton + earnings_change
                 if new_earnings < 0:
                     conn.close()
                     return False
                 cursor.execute("UPDATE users SET earnings_ton = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), user_id))
+                              (new_earnings, datetime.now(), int(user_id)))
             conn.commit()
         conn.close()
         return True
@@ -332,7 +341,7 @@ async def add_stake(user_id, plan_id, amount, duration_days, currency):
     if conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO stakes (user_id, plan_id, amount, currency, start_date, duration_days, last_earning_update, is_expired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                      (user_id, plan_id, amount, currency, datetime.now(), duration_days, datetime.now(), 0))
+                      (int(user_id), plan_id, amount, currency, datetime.now(), duration_days, datetime.now(), 0))
         conn.commit()
         conn.close()
         logging.info(f"Stake added: user_id={user_id}, plan_id={plan_id}, amount={amount}, currency={currency}, duration_days={duration_days}")
@@ -343,7 +352,7 @@ async def calculate_total_earnings(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (int(user_id),))
         earnings = cursor.fetchone()
         past_earnings_usdt, past_earnings_trx, past_earnings_bnb, past_earnings_doge, past_earnings_ton = earnings if earnings else (0, 0, 0, 0, 0)
         
@@ -411,7 +420,7 @@ async def calculate_total_earnings(user_id):
         if total_new_earnings_ton > 0:
             await update_earnings(user_id, total_new_earnings_ton, "TON")
         
-        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (int(user_id),))
         earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = cursor.fetchone()
         conn.commit()
         conn.close()
@@ -423,7 +432,7 @@ async def add_transaction(user_id, transaction_type, amount, currency):
     if conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO transactions (user_id, transaction_type, amount, currency) VALUES (?, ?, ?, ?)", 
-                      (user_id, transaction_type, amount, currency))
+                      (int(user_id), transaction_type, amount, currency))
         conn.commit()
         conn.close()
         logging.info(f"Transaction added: {transaction_type} {amount} {currency} for user {user_id}")
@@ -450,18 +459,24 @@ async def transfer_earnings_to_balance(user_id, amount, currency):
                     "DOGE": user[5],
                     "TON": user[6]
                 }[currency]
-                return True, f"{amount:.2f} {currency} has been transferred to your balance. New {currency} balance: {new_balance:.2f} {currency}"
+                if currency == "BNB":
+                    return True, f"{amount:.6f} {currency} has been transferred to your balance. New {currency} balance: {new_balance:.6f} {currency}"
+                else:
+                    return True, f"{amount:.2f} {currency} has been transferred to your balance. New {currency} balance: {new_balance:.2f} {currency}"
             else:
                 return False, "Failed to transfer earnings. Try again."
         else:
-            return False, f"You don’t have enough earnings. Your current {currency} earnings: {earnings:.2f} {currency}"
+            if currency == "BNB":
+                return False, f"You don’t have enough earnings. Your current {currency} earnings: {earnings:.6f} {currency}"
+            else:
+                return False, f"You don’t have enough earnings. Your current {currency} earnings: {earnings:.2f} {currency}"
     return False, "User not found."
 
 async def get_wallet_address(user_id, currency):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT wallet_address FROM wallets WHERE user_id = ? AND currency = ?", (user_id, currency))
+        cursor.execute("SELECT wallet_address FROM wallets WHERE user_id = ? AND currency = ?", (int(user_id), currency))
         result = cursor.fetchone()
         conn.close()
         return result[0] if result else None
@@ -471,7 +486,7 @@ async def get_deposit_address(user_id, currency):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT deposit_address FROM wallets WHERE user_id = ? AND currency = ?", (user_id, currency))
+        cursor.execute("SELECT deposit_address FROM wallets WHERE user_id = ? AND currency = ?", (int(user_id), currency))
         result = cursor.fetchone()
         conn.close()
         return result[0] if result else None
@@ -482,7 +497,7 @@ async def save_wallet_address(user_id, currency, wallet_address):
     if conn:
         cursor = conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO wallets (user_id, currency, wallet_address) VALUES (?, ?, ?)",
-                      (user_id, currency, wallet_address))
+                      (int(user_id), currency, wallet_address))
         conn.commit()
         conn.close()
 
@@ -491,10 +506,10 @@ async def save_deposit_address(user_id, currency, address):
     if conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE wallets SET deposit_address = ? WHERE user_id = ? AND currency = ?",
-                      (address, user_id, currency))
+                      (address, int(user_id), currency))
         if cursor.rowcount == 0:
             cursor.execute("INSERT INTO wallets (user_id, currency, deposit_address) VALUES (?, ?, ?)",
-                          (user_id, currency, address))
+                          (int(user_id), currency, address))
         conn.commit()
         conn.close()
 
@@ -553,7 +568,7 @@ async def check_last_withdrawal(user_id):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT status, request_time FROM withdraw_requests WHERE user_id = ? ORDER BY request_time DESC LIMIT 1", (user_id,))
+        cursor.execute("SELECT status, request_time FROM withdraw_requests WHERE user_id = ? ORDER BY request_time DESC LIMIT 1", (int(user_id),))
         result = cursor.fetchone()
         conn.close()
         if result:
@@ -567,7 +582,7 @@ async def add_withdraw_request(user_id, amount, currency, fee, wallet_address):
     if conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO withdraw_requests (user_id, amount, currency, fee, wallet_address, status, request_time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                      (user_id, amount, currency, fee, wallet_address, "Pending", datetime.now()))
+                      (int(user_id), amount, currency, fee, wallet_address, "Pending", datetime.now()))
         conn.commit()
         conn.close()
         logging.info(f"Withdrawal request added: user_id={user_id}, amount={amount}, currency={currency}")
@@ -639,7 +654,10 @@ async def send_withdrawal_report():
     report = "Pending Withdrawals (last 12 hours):\n"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
     for req in requests:
-        report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
+        if req[3] == "BNB":
+            report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.6f} {req[3]} | Fee: {req[4]:.6f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
+        else:
+            report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
         keyboard.inline_keyboard.append([
             InlineKeyboardButton(text=f"Complete ID {req[0]}", callback_data=f"complete_{req[0]}"),
             InlineKeyboardButton(text=f"Reject ID {req[0]}", callback_data=f"reject_{req[0]}")
@@ -651,95 +669,6 @@ async def schedule_reports():
     while True:
         await send_withdrawal_report()
         await asyncio.sleep(43200)
-
-class DepositState(StatesGroup):
-    selecting_currency = State()
-    waiting_for_amount = State()
-
-class WithdrawState(StatesGroup):
-    selecting_currency = State()
-    confirming_address = State()
-    entering_new_address = State()
-    entering_amount = State()
-
-class StakeState(StatesGroup):
-    selecting_currency = State()
-    selecting_plan = State()
-    waiting_for_amount = State()
-
-class EarningsState(StatesGroup):
-    choosing_action = State()
-    entering_amount = State()
-
-class AdminState(StatesGroup):
-    waiting_for_add_admin_id = State()
-    waiting_for_remove_admin_id = State()
-    waiting_for_edit_balance = State()
-    waiting_for_delete_user = State()
-    waiting_for_edit_stake_limit = State()
-    waiting_for_edit_deposit_limit = State()
-
-main_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
-        [KeyboardButton(text="💸 Stake"), KeyboardButton(text="💼 Check Balance")],
-        [KeyboardButton(text="📋 Check Staked"), KeyboardButton(text="📈 View Earnings")],
-        [KeyboardButton(text="👥 Referral Link"), KeyboardButton(text="❓ Guide")]
-    ],
-    resize_keyboard=True
-)
-
-deposit_currency_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Deposit USDT"), KeyboardButton(text="Deposit TRX")],
-        [KeyboardButton(text="Deposit BNB"), KeyboardButton(text="Deposit DOGE")],
-        [KeyboardButton(text="Deposit TON"), KeyboardButton(text="Back to Main Menu")]
-    ],
-    resize_keyboard=True
-)
-
-stake_currency_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Stake USDT"), KeyboardButton(text="Stake TRX")],
-        [KeyboardButton(text="Stake BNB"), KeyboardButton(text="Stake DOGE")],
-        [KeyboardButton(text="Stake TON"), KeyboardButton(text="Back to Main Menu")]
-    ],
-    resize_keyboard=True
-)
-
-stake_plan_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Starter 2% Forever"), KeyboardButton(text="Pro 3% Forever")],
-        [KeyboardButton(text="Elite 4% Forever"), KeyboardButton(text="40-Day 4% Daily")],
-        [KeyboardButton(text="60-Day 3% Daily"), KeyboardButton(text="100-Day 2.5% Daily")],
-        [KeyboardButton(text="Back to Main Menu")]
-    ],
-    resize_keyboard=True
-)
-
-withdraw_currency_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Withdraw USDT"), KeyboardButton(text="Withdraw TRX")],
-        [KeyboardButton(text="Withdraw BNB"), KeyboardButton(text="Withdraw DOGE")],
-        [KeyboardButton(text="Withdraw TON"), KeyboardButton(text="Back to Main Menu")]
-    ],
-    resize_keyboard=True
-)
-
-address_confirmation_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Yes"), KeyboardButton(text="Change Address")],
-        [KeyboardButton(text="Back to Main Menu")]
-    ],
-    resize_keyboard=True
-)
-
-earnings_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Back to Main Menu"), KeyboardButton(text="Transfer to Balance")]
-    ],
-    resize_keyboard=True
-)
 
 async def handle_webhook(request):
     signature = request.headers.get("x-nowpayments-sig")
@@ -811,6 +740,95 @@ async def handle_webhook(request):
     return web.Response(text="Success")
 
 app.router.add_post('/webhook', handle_webhook)
+
+main_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
+        [KeyboardButton(text="💸 Stake"), KeyboardButton(text="💼 Check Balance")],
+        [KeyboardButton(text="📋 Check Staked"), KeyboardButton(text="📈 View Earnings")],
+        [KeyboardButton(text="👥 Referral Link"), KeyboardButton(text="❓ Guide")]
+    ],
+    resize_keyboard=True
+)
+
+deposit_currency_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Deposit USDT"), KeyboardButton(text="Deposit TRX")],
+        [KeyboardButton(text="Deposit BNB"), KeyboardButton(text="Deposit DOGE")],
+        [KeyboardButton(text="Deposit TON"), KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+stake_currency_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Stake USDT"), KeyboardButton(text="Stake TRX")],
+        [KeyboardButton(text="Stake BNB"), KeyboardButton(text="Stake DOGE")],
+        [KeyboardButton(text="Stake TON"), KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+stake_plan_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Starter 2% Forever"), KeyboardButton(text="Pro 3% Forever")],
+        [KeyboardButton(text="Elite 4% Forever"), KeyboardButton(text="40-Day 4% Daily")],
+        [KeyboardButton(text="60-Day 3% Daily"), KeyboardButton(text="100-Day 2.5% Daily")],
+        [KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+withdraw_currency_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Withdraw USDT"), KeyboardButton(text="Withdraw TRX")],
+        [KeyboardButton(text="Withdraw BNB"), KeyboardButton(text="Withdraw DOGE")],
+        [KeyboardButton(text="Withdraw TON"), KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+address_confirmation_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Yes"), KeyboardButton(text="Change Address")],
+        [KeyboardButton(text="Back to Main Menu")]
+    ],
+    resize_keyboard=True
+)
+
+earnings_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Back to Main Menu"), KeyboardButton(text="Transfer to Balance")]
+    ],
+    resize_keyboard=True
+)
+
+class DepositState(StatesGroup):
+    selecting_currency = State()
+    waiting_for_amount = State()
+
+class WithdrawState(StatesGroup):
+    selecting_currency = State()
+    confirming_address = State()
+    entering_new_address = State()
+    entering_amount = State()
+
+class StakeState(StatesGroup):
+    selecting_currency = State()
+    selecting_plan = State()
+    waiting_for_amount = State()
+
+class EarningsState(StatesGroup):
+    choosing_action = State()
+    entering_amount = State()
+
+class AdminState(StatesGroup):
+    waiting_for_add_admin_id = State()
+    waiting_for_remove_admin_id = State()
+    waiting_for_edit_balance = State()
+    waiting_for_delete_user = State()
+    waiting_for_edit_stake_limit = State()
+    waiting_for_edit_deposit_limit = State()
 
 @dispatcher.message(Command("start"))
 async def send_welcome(message: types.Message):
@@ -931,7 +949,10 @@ async def check_staked_command(message: types.Message):
             6: "100-Day 2.5% Daily: 2.5% (100 days)"
         }[plan_id]
         
-        response += f"- {plan_desc}: {amount:,.2f} {currency} (Started: {start_date})\n"
+        if currency == "BNB":
+            response += f"- {plan_desc}: {amount:,.6f} {currency} (Started: {start_date})\n"
+        else:
+            response += f"- {plan_desc}: {amount:,.2f} {currency} (Started: {start_date})\n"
     await message.reply(response)
 
 @dispatcher.message(Command("viewearnings"))
@@ -973,7 +994,10 @@ async def pending_withdrawals_command(message: types.Message):
     report = "Pending Withdrawals (last 12 hours):\n"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
     for req in requests:
-        report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
+        if req[3] == "BNB":
+            report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.6f} {req[3]} | Fee: {req[4]:.6f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
+        else:
+            report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
         keyboard.inline_keyboard.append([
             InlineKeyboardButton(text=f"Complete ID {req[0]}", callback_data=f"complete_{req[0]}"),
             InlineKeyboardButton(text=f"Reject ID {req[0]}", callback_data=f"reject_{req[0]}")
@@ -1229,7 +1253,10 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
         
         min_stake = await get_min_limit(currency, plan_id, "stake")
         if amount < min_stake:
-            await message.reply(f"Amount must be at least {min_stake} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
+            if currency == "BNB":
+                await message.reply(f"Amount must be at least {min_stake:.6f} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
+            else:
+                await message.reply(f"Amount must be at least {min_stake:.2f} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
             return
         
         user = await get_user(user_id)
@@ -1242,7 +1269,10 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
         await update_balance(user_id, -amount, currency)
         await add_stake(user_id, plan_id, amount, duration_days, currency)
         await add_transaction(user_id, f"stake_plan_{plan_id}", amount, currency)
-        await message.reply(f"Staked {amount:,.2f} {currency} in {plan_names[plan_id]}. Check your stakes with 'Check Staked'.", reply_markup=main_menu)
+        if currency == "BNB":
+            await message.reply(f"Staked {amount:,.6f} {currency} in {plan_names[plan_id]}. Check your stakes with 'Check Staked'.", reply_markup=main_menu)
+        else:
+            await message.reply(f"Staked {amount:,.2f} {currency} in {plan_names[plan_id]}. Check your stakes with 'Check Staked'.", reply_markup=main_menu)
         await state.clear()
     except ValueError:
         await message.reply("Invalid amount. Please enter a number.", reply_markup=stake_plan_menu)
@@ -1253,7 +1283,7 @@ async def process_earnings_action(message: types.Message, state: FSMContext):
     if message.text == "Transfer to Balance":
         user = await get_user(user_id)
         earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
-        await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.4f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
+        await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.6f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
         await state.set_state(EarningsState.entering_amount)
     elif message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
@@ -1308,7 +1338,10 @@ async def process_withdraw_currency(message: types.Message, state: FSMContext):
     
     user = await get_user(user_id)
     earnings = user[5] if currency == "USDT" else user[6] if currency == "TRX" else user[7] if currency == "BNB" else user[8] if currency == "DOGE" else user[9]
-    await message.reply(f"Your available earnings for {currency}: {earnings:,.2f} {currency}. Enter the amount to withdraw:", reply_markup=main_menu)
+    if currency == "BNB":
+        await message.reply(f"Your available earnings for {currency}: {earnings:,.6f} {currency}. Enter the amount to withdraw:", reply_markup=main_menu)
+    else:
+        await message.reply(f"Your available earnings for {currency}: {earnings:,.2f} {currency}. Enter the amount to withdraw:", reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
 @dispatcher.message(WithdrawState.entering_amount)
@@ -1323,7 +1356,10 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
     try:
         amount = float(message.text)
         if amount < min_withdrawal:
-            await message.reply(f"Amount must be at least {min_withdrawal} {currency}.", reply_markup=main_menu)
+            if currency == "BNB":
+                await message.reply(f"Amount must be at least {min_withdrawal:.6f} {currency}.", reply_markup=main_menu)
+            else:
+                await message.reply(f"Amount must be at least {min_withdrawal:.2f} {currency}.", reply_markup=main_menu)
             return
         
         total_amount = amount + fee
@@ -1337,15 +1373,20 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext):
         wallet_address = await get_wallet_address(user_id, currency)
         if not wallet_address:
             network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
-            await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. Please enter your {network} {currency} wallet address:", reply_markup=main_menu)
+            if currency == "BNB":
+                await message.reply(f"The network fee for withdrawing {currency} is {fee:.6f} {currency}. Please enter your {network} {currency} wallet address:", reply_markup=main_menu)
+            else:
+                await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. Please enter your {network} {currency} wallet address:", reply_markup=main_menu)
             await state.set_state(WithdrawState.entering_new_address)
             return
         
         if await update_earnings(user_id, -total_amount, currency):
             await add_withdraw_request(user_id, amount, currency, fee, wallet_address)
             network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
-            await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. {amount:,.2f} {currency} has been deducted from your earnings (including fee) and will be transferred to your {network} wallet ({wallet_address}) within 24 hours after review.",
-                               reply_markup=main_menu)
+            if currency == "BNB":
+                await message.reply(f"The network fee for withdrawing {currency} is {fee:.6f} {currency}. {amount:,.6f} {currency} has been deducted from your earnings (including fee) and will be transferred to your {network} wallet ({wallet_address}) within 24 hours after review.", reply_markup=main_menu)
+            else:
+                await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. {amount:,.2f} {currency} has been deducted from your earnings (including fee) and will be transferred to your {network} wallet ({wallet_address}) within 24 hours after review.", reply_markup=main_menu)
             await state.clear()
         else:
             await message.reply("Failed to process withdrawal. Try again.", reply_markup=main_menu)
@@ -1364,8 +1405,10 @@ async def process_new_address(message: types.Message, state: FSMContext):
     
     fee = get_withdrawal_fee(currency)
     min_withdrawal = await get_min_withdrawal(currency)
-    await message.reply(f"Network fee for withdrawing {currency} is {fee:.4f} {currency}. Enter the amount to withdraw (minimum {min_withdrawal} {currency}):",
-                       reply_markup=main_menu)
+    if currency == "BNB":
+        await message.reply(f"Network fee for withdrawing {currency} is {fee:.6f} {currency}. Enter the amount to withdraw (minimum {min_withdrawal:.6f} {currency}):", reply_markup=main_menu)
+    else:
+        await message.reply(f"Network fee for withdrawing {currency} is {fee:.4f} {currency}. Enter the amount to withdraw (minimum {min_withdrawal:.2f} {currency}):", reply_markup=main_menu)
     await state.set_state(WithdrawState.entering_amount)
 
 @dispatcher.callback_query(F.data == "view_users")
@@ -1511,7 +1554,7 @@ async def process_stats(callback: types.CallbackQuery):
         stats = cursor.fetchone()
         conn.close()
         user_count, total_usdt, total_trx, total_bnb, total_doge, total_ton = stats
-        await callback.message.reply(f"Bot Stats:\nUsers: {user_count}\nTotal USDT: {total_usdt or 0:,.2f}\nTotal TRX: {total_trx or 0:,.2f}\nTotal BNB: {total_bnb or 0:,.4f}\nTotal DOGE: {total_doge or 0:,.2f}\nTotal TON: {total_ton or 0:,.2f}")
+        await callback.message.reply(f"Bot Stats:\nUsers: {user_count}\nTotal USDT: {total_usdt or 0:,.2f}\nTotal TRX: {total_trx or 0:,.2f}\nTotal BNB: {total_bnb or 0:,.6f}\nTotal DOGE: {total_doge or 0:,.2f}\nTotal TON: {total_ton or 0:,.2f}")
     await callback.answer()
 
 @dispatcher.callback_query(F.data == "add_admin")
