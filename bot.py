@@ -702,9 +702,10 @@ async def handle_webhook(request):
 
     min_deposit = await get_min_deposit(currency)
     logging.info(f"Checking deposit: amount={amount}, min_deposit={min_deposit}, condition={amount >= min_deposit}")
-    
+
     if amount < min_deposit:
         credited_amount = amount * 0.9
+        logging.info(f"Deposit below minimum: crediting {credited_amount} {currency} to user {user_id}")
         await update_balance(user_id, credited_amount, currency)
         await add_transaction(user_id, "deposit", credited_amount, currency)
         if currency == "BNB":
@@ -714,12 +715,14 @@ async def handle_webhook(request):
         user = await get_user(user_id)
         if user and user[12]:
             referrer_id = user[12]
+            logging.info(f"No bonus for referrer {referrer_id} due to below-minimum deposit")
             if currency == "BNB":
                 await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {str(amount).rstrip('0').rstrip('.')} {currency}, which is less than the minimum ({str(min_deposit).rstrip('0').rstrip('.')}), no referral bonus was credited.")
             else:
                 await bot.send_message(referrer_id, f"Because your referral (user {user_id}) deposited {amount:.2f} {currency}, which is less than the minimum ({min_deposit:.2f} {currency}), no referral bonus was credited.")
     else:
         credited_amount = amount
+        logging.info(f"Crediting deposit: {credited_amount} {currency} to user {user_id}")
         await update_balance(user_id, credited_amount, currency)
         await add_transaction(user_id, "deposit", credited_amount, currency)
         if currency == "BNB":
@@ -730,12 +733,16 @@ async def handle_webhook(request):
         if user and user[12]:
             referrer_id = user[12]
             bonus_amount = credited_amount * 0.05
-            await update_balance(referrer_id, bonus_amount, currency)
-            await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
-            if currency == "BNB":
-                await bot.send_message(referrer_id, f"Your balance has been increased by {str(bonus_amount).rstrip('0').rstrip('.')} {currency} as a referral bonus from user {user_id}.")
+            logging.info(f"Crediting referral bonus: {bonus_amount} {currency} to referrer {referrer_id}")
+            success = await update_balance(referrer_id, bonus_amount, currency)
+            if success:
+                await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
+                if currency == "BNB":
+                    await bot.send_message(referrer_id, f"Your balance has been increased by {str(bonus_amount).rstrip('0').rstrip('.')} {currency} as a referral bonus from user {user_id}.")
+                else:
+                    await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
             else:
-                await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
+                logging.error(f"Failed to credit bonus {bonus_amount} {currency} to referrer {referrer_id}")
 
     return web.Response(text="Success")
 
