@@ -175,10 +175,16 @@ async def add_user(user_id, username, referrer_id=None):
         user = cursor.fetchone()
         if user:
             cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, int(user_id)))
+            logging.info(f"Updated user {user_id} with username {username}")
         else:
-            logging.info(f"Adding new user {user_id} with referrer_id {referrer_id}")
-            cursor.execute("INSERT INTO users (user_id, username, last_earning_update, referrer_id) VALUES (?, ?, ?, ?)", 
-                          (int(user_id), username, datetime.now(), referrer_id if referrer_id is None or isinstance(referrer_id, int) else None))
+            if referrer_id and isinstance(referrer_id, int):
+                logging.info(f"Adding new user {user_id} with referrer_id {referrer_id}")
+                cursor.execute("INSERT INTO users (user_id, username, last_earning_update, referrer_id) VALUES (?, ?, ?, ?)", 
+                              (int(user_id), username, datetime.now(), referrer_id))
+            else:
+                logging.info(f"Adding new user {user_id} with no referrer")
+                cursor.execute("INSERT INTO users (user_id, username, last_earning_update) VALUES (?, ?, ?)", 
+                              (int(user_id), username, datetime.now()))
         conn.commit()
         conn.close()
 
