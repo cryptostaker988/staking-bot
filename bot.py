@@ -698,6 +698,11 @@ async def handle_webhook(request):
 
     logging.info(f"Webhook received: {data}")
 
+    status = data.get("payment_status")
+    if status not in ["confirmed", "finished", "partially_paid"]:
+        logging.info(f"Payment status '{status}' not confirmed yet, skipping.")
+        return web.Response(text="Success")
+
     payment_id = data.get("payment_id")
     conn = await db_connect()
     if conn:
@@ -707,14 +712,7 @@ async def handle_webhook(request):
             logging.info(f"Payment {payment_id} already processed, skipping.")
             conn.close()
             return web.Response(text="Success")
-        cursor.execute("INSERT INTO processed_payments (payment_id) VALUES (?)", (payment_id,))
-        conn.commit()
-        conn.close()
-
-    status = data.get("payment_status")
-    if status not in ["confirmed", "finished", "partially_paid"]:
-        logging.info(f"Payment status '{status}' not confirmed yet, skipping.")
-        return web.Response(text="Success")
+        conn.close()  # بستن اتصال اگه پردازش نکنیم
 
     user_id = int(data.get("order_id"))
     amount = data.get("actually_paid") or data.get("pay_amount") or data.get("price_amount")
@@ -780,6 +778,14 @@ async def handle_webhook(request):
                 logging.error(f"Failed to credit bonus {bonus_amount} {currency} to referrer {referrer_id}")
         else:
             logging.warning(f"No valid referrer_id for user {user_id}: {user[12] if user else 'No user'}")
+
+    # حالا که پردازش موفق بود، payment_id رو ثبت می‌کنیم
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO processed_payments (payment_id) VALUES (?)", (payment_id,))
+        conn.commit()
+        conn.close()
 
     return web.Response(text="Success")
 
