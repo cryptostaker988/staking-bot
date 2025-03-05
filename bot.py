@@ -702,7 +702,7 @@ async def handle_webhook(request):
 
     min_deposit = await get_min_deposit(currency)
     logging.info(f"Checking deposit: amount={amount}, min_deposit={min_deposit}, condition={amount >= min_deposit}")
-
+   
     if amount < min_deposit:
         credited_amount = amount * 0.9
         logging.info(f"Deposit below minimum: crediting {credited_amount} {currency} to user {user_id}")
@@ -713,7 +713,7 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} was below the minimum ({min_deposit:.2f} {currency}). Due to a 10% fee, {credited_amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[12]:
+        if user and user[12] and isinstance(user[12], int):  # چک می‌کنیم که referrer_id عدد باشه
             referrer_id = user[12]
             logging.info(f"No bonus for referrer {referrer_id} due to below-minimum deposit")
             if currency == "BNB":
@@ -730,7 +730,7 @@ async def handle_webhook(request):
         else:
             await bot.send_message(user_id, f"Your deposit of {amount:.2f} {currency} has been credited!")
         user = await get_user(user_id)
-        if user and user[12]:
+        if user and user[12] and isinstance(user[12], int):  # چک می‌کنیم که referrer_id عدد باشه
             referrer_id = user[12]
             bonus_amount = credited_amount * 0.05
             logging.info(f"Crediting referral bonus: {bonus_amount} {currency} to referrer {referrer_id}")
@@ -743,6 +743,8 @@ async def handle_webhook(request):
                     await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
             else:
                 logging.error(f"Failed to credit bonus {bonus_amount} {currency} to referrer {referrer_id}")
+        else:
+            logging.warning(f"No valid referrer_id for user {user_id}: {user[12] if user else 'No user'}")
 
     return web.Response(text="Success")
 
@@ -1113,6 +1115,15 @@ async def guide_command(message: types.Message):
         "- 👥 Referral Link: Invite friends, earn 5% bonus."
     )
     await message.reply(guide_text, reply_markup=main_menu)
+@dispatcher.message(Command("checkuser"))
+async def check_user_command(message: types.Message):
+    user_id = message.from_user.id
+    user = await get_user(user_id)
+    if user:
+        logging.info(f"User {user_id} data: {user}")
+        await message.reply(f"User data: {user}")
+    else:
+        await message.reply("User not found.")
 
 @dispatcher.message(DepositState.selecting_currency)
 async def process_deposit_currency(message: types.Message, state: FSMContext):
