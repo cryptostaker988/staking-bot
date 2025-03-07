@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram import F
@@ -8,24 +9,51 @@ import sqlite3
 import os
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
 import urllib.parse
 from aiohttp import web
 import hmac
 import hashlib
 import json
-from aiogram.fsm.state import State, StatesGroup
 
+# تعریف حالت‌ها
 class EditEarningsState(StatesGroup):
-    user_id = State()  # گرفتن آیدی کاربر
-    currency = State()  # انتخاب ارز
-    amount = State()   # گرفتن مقدار سود
+    user_id = State()
+    currency = State()
+    amount = State()
 
+class DepositState(StatesGroup):
+    selecting_currency = State()
+    waiting_for_amount = State()
+
+class WithdrawState(StatesGroup):
+    selecting_currency = State()
+    confirming_address = State()
+    entering_new_address = State()
+    entering_amount = State()
+
+class StakeState(StatesGroup):
+    selecting_currency = State()
+    selecting_plan = State()
+    waiting_for_amount = State()
+
+class EarningsState(StatesGroup):
+    choosing_action = State()
+    entering_amount = State()
+
+class AdminState(StatesGroup):
+    waiting_for_add_admin_id = State()
+    waiting_for_remove_admin_id = State()
+    waiting_for_edit_balance = State()
+    waiting_for_delete_user = State()
+    waiting_for_edit_stake_limit = State()
+    waiting_for_edit_deposit_limit = State()
+
+# تنظیمات اولیه
 API_TOKEN = os.getenv("API_TOKEN", "8149978835:AAFcLTmqXz8o0VYu0zXiLQXElcsMI03J8CA")
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
 IPN_SECRET = os.getenv("IPN_SECRET", "1N6xRI+EGoFRW+txIHd5O5srB9uq64ZT")
-ADMIN_ID = None
+ADMIN_ID = 7509858897  # مقدار پیش‌فرض
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Bot initialized with token: {API_TOKEN}")
 
@@ -35,11 +63,11 @@ dispatcher = Dispatcher()
 
 db_lock = asyncio.Lock()
 
+# اتصال به دیتابیس
 async def db_connect():
     async with db_lock:
         for attempt in range(3):
             try:
-                # تغییر مسیر به دیسک Render
                 conn = sqlite3.connect("/opt/render/project/db/staking_bot.db", timeout=30)
                 return conn
             except sqlite3.OperationalError as e:
@@ -49,6 +77,7 @@ async def db_connect():
                 else:
                     raise
 
+# مقداردهی اولیه دیتابیس
 async def initialize_database():
     conn = await db_connect()
     if conn:
@@ -147,7 +176,7 @@ async def initialize_database():
                         )''')
         
         cursor.execute("SELECT COUNT(*) FROM limits WHERE type = 'deposit'")
-        if cursor.fetchone()[0] == 0:  # فقط اگه هیچ حداقل دیپازیتی نباشه
+        if cursor.fetchone()[0] == 0:
             initial_deposit_limits = [
                 ("USDT", 0, 20.0), ("TRX", 0, 40.0), ("BNB", 0, 0.02), ("DOGE", 0, 150.0), ("TON", 0, 8.0)
             ]
@@ -155,7 +184,7 @@ async def initialize_database():
             logging.info("Initialized default deposit limits.")
         
         cursor.execute("SELECT COUNT(*) FROM limits WHERE type = 'stake'")
-        if cursor.fetchone()[0] == 0:  # فقط اگه هیچ حداقل استیکی نباشه
+        if cursor.fetchone()[0] == 0:
             initial_stake_limits = [
                 ("USDT", 1, 50), ("USDT", 2, 5000), ("USDT", 3, 20000), ("USDT", 4, 0), ("USDT", 5, 0), ("USDT", 6, 0),
                 ("TRX", 1, 200), ("TRX", 2, 20000), ("TRX", 3, 80000), ("TRX", 4, 0), ("TRX", 5, 0), ("TRX", 6, 0),
@@ -768,18 +797,15 @@ async def handle_webhook(request):
         if user and user[13] and isinstance(user[13], int):
             referrer_id = user[13]
             bonus_amount = credited_amount * 0.05
-            # تغییر فرمت لاگ به اعشار
             logging.info(f"Crediting referral bonus: {bonus_amount:.5f} {currency} to referrer {referrer_id}")
             success = await update_balance(referrer_id, bonus_amount, currency)
             if success:
                 await add_transaction(referrer_id, "referral_bonus", bonus_amount, currency)
                 if currency == "BNB":
-                    # تغییر فرمت پیام به اعشار
                     await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.5f} {currency} as a referral bonus from user {user_id}.")
                 else:
                     await bot.send_message(referrer_id, f"Your balance has been increased by {bonus_amount:.2f} {currency} as a referral bonus from user {user_id}.")
             else:
-                # تغییر فرمت لاگ به اعشار
                 logging.error(f"Failed to credit bonus {bonus_amount:.5f} {currency} to referrer {referrer_id}")
         else:
             logging.warning(f"No valid referrer_id for user {user_id}: {user[13] if user else 'No user'}")
@@ -802,6 +828,7 @@ async def handle_telegram_webhook(request):
 
 app.router.add_post('/telegram-webhook', handle_telegram_webhook)
 
+# منوها
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
@@ -864,32 +891,22 @@ earnings_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-class DepositState(StatesGroup):
-    selecting_currency = State()
-    waiting_for_amount = State()
-
-class WithdrawState(StatesGroup):
-    selecting_currency = State()
-    confirming_address = State()
-    entering_new_address = State()
-    entering_amount = State()
-
-class StakeState(StatesGroup):
-    selecting_currency = State()
-    selecting_plan = State()
-    waiting_for_amount = State()
-
-class EarningsState(StatesGroup):
-    choosing_action = State()
-    entering_amount = State()
-
-class AdminState(StatesGroup):
-    waiting_for_add_admin_id = State()
-    waiting_for_remove_admin_id = State()
-    waiting_for_edit_balance = State()
-    waiting_for_delete_user = State()
-    waiting_for_edit_stake_limit = State()
-    waiting_for_edit_deposit_limit = State()
+async def get_admin_menu(username):
+    admin_menu = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="View Users", callback_data="view_users"),
+         InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
+        [InlineKeyboardButton(text="Delete User", callback_data="delete_user"),
+         InlineKeyboardButton(text="Bot Stats", callback_data="stats")],
+        [InlineKeyboardButton(text="Edit Stake Limits", callback_data="edit_stake_limits"),
+         InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
+        [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings")]
+    ])
+    if username.lower() in ["coinstakebot_admin", "tyhi87655"]:
+        admin_menu.inline_keyboard.append([
+            InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
+            InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
+        ])
+    return admin_menu
 
 @dispatcher.message(Command("start"))
 async def send_welcome(message: types.Message):
@@ -920,22 +937,7 @@ async def admin_panel(message: types.Message):
         await message.reply("You are not an admin!")
         return
     
-    admin_menu = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="View Users", callback_data="view_users"),
-         InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
-        [InlineKeyboardButton(text="Delete User", callback_data="delete_user"),
-         InlineKeyboardButton(text="Bot Stats", callback_data="stats")],
-        [InlineKeyboardButton(text="Edit Stake Limits", callback_data="edit_stake_limits"),
-         InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
-        [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings")]  # دکمه جدید
-    ])
-      
-    if username.lower() in ["coinstakebot_admin", "tyhi87655"]:
-        admin_menu.inline_keyboard.append([
-            InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
-            InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
-        ])
-    
+    admin_menu = await get_admin_menu(username)
     await message.reply("Admin Panel:", reply_markup=admin_menu)
 
 @dispatcher.callback_query(F.callback_data == "admin_edit_earnings")
@@ -948,10 +950,9 @@ async def process_edit_earnings(callback: types.CallbackQuery, state: FSMContext
 async def process_user_id(message: types.Message, state: FSMContext):
     user_id = message.text
     try:
-        user_id = int(user_id)  # مطمئن می‌شیم آیدی عدد باشه
+        user_id = int(user_id)
         await state.update_data(user_id=user_id)
         
-        # منوی انتخاب ارز
         currency_menu = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="BNB", callback_data="currency_BNB"),
              InlineKeyboardButton(text="USDT", callback_data="currency_USDT")],
@@ -967,818 +968,635 @@ async def process_user_id(message: types.Message, state: FSMContext):
 
 @dispatcher.callback_query(F.callback_data.startswith("currency_"))
 async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
-    currency = callback.data.split("_")[1]  # مثلاً "BNB" از "currency_BNB"
+    currency = callback.data.split("_")[1]
     await state.update_data(currency=currency)
     await callback.message.edit_text(f"Enter the new earnings amount for {currency} (e.g., 0.01):")
     await EditEarningsState.amount.set()
     await callback.answer()
 
+@dispatcher.callback_query(F.callback_data == "cancel_edit")
+async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    admin_menu = await get_admin_menu(callback.from_user.username or "Unknown")
+    await callback.message.edit_text("Admin Panel:", reply_markup=admin_menu)
+    await callback.answer()
+
 @dispatcher.message(EditEarningsState.amount)
 async def process_earnings_amount(message: types.Message, state: FSMContext):
     try:
-        amount = float(message.text)  # تبدیل به عدد
+        amount = float(message.text)
         data = await state.get_data()
         user_id = data["user_id"]
-        currency = data["currency"]
+        currency = data["currency"].lower()
         
         conn = await db_connect()
         cursor = conn.cursor()
-        cursor.execute("UPDATE users SET earnings = ? WHERE user_id = ?", (amount, user_id))
+        cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        if not cursor.fetchone():
+            await message.reply(f"No user found with ID {user_id}!")
+            await state.finish()
+            conn.close()
+            return
+        
+        cursor.execute(f"UPDATE users SET earnings_{currency} = ? WHERE user_id = ?", (amount, user_id))
         conn.commit()
         conn.close()
         
-        await message.reply(f"Earnings for user {user_id} updated to {amount} {currency}!")
+        await message.reply(f"Earnings for user {user_id} updated to {amount} {currency.upper()}!")
         await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 0.01)!")
         await state.finish()
 
-@dispatcher.callback_query(F.callback_data == "cancel_edit")
-async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
-    await callback.message.edit_text("Admin Panel:", reply_markup=admin_menu)  # برگشت به منوی ادمین
-    await callback.answer()
-
-
-@dispatcher.message(Command("deposit"))
-async def deposit_command(message: types.Message, state: FSMContext):
-    await message.reply("Choose a currency to deposit:", reply_markup=deposit_currency_menu)
-    await state.set_state(DepositState.selecting_currency)
-
-@dispatcher.message(Command("withdraw"))
-async def withdraw_command(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    status, last_request_time = await check_last_withdrawal(user_id)
-    now = datetime.now()
-    
-    if status:
-        time_diff = now - last_request_time
-        if time_diff.total_seconds() < 24 * 3600:
-            if status == "Pending":
-                await message.reply("You already have a pending withdrawal request. Please wait until it’s processed.", reply_markup=main_menu)
-            else:
-                await message.reply(f"You’ve already submitted a request. Please wait 24 hours from your last request (submitted at {last_request_time}).", reply_markup=main_menu)
-            return
-    
-    await message.reply("Choose a currency to withdraw:", reply_markup=withdraw_currency_menu)
-    await state.set_state(WithdrawState.selecting_currency)
-
-@dispatcher.message(Command("stake"))
-async def stake_command(message: types.Message, state: FSMContext):
-    await message.reply("Choose a currency to stake:", reply_markup=stake_currency_menu)
-    await state.set_state(StakeState.selecting_currency)
-
-@dispatcher.message(Command("checkbalance"))
-async def check_balance_command(message: types.Message):
-    user_id = message.from_user.id
-    username = message.from_user.username or "Unknown"
-    user = await get_user(user_id)
-    if not user:
-        await add_user(user_id, username)
-        user = await get_user(user_id)
-    
-    balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
-    # تغییر فرمت به اعشاری برای BNB
-    await message.reply(f"Your balance:\n{balance_usdt:.2f} USDT\n{balance_trx:.2f} TRX\n{balance_bnb:.5f} BNB\n{balance_doge:.2f} DOGE\n{balance_ton:.2f} TON")
-
-@dispatcher.message(Command("checkstaked"))
-async def check_staked_command(message: types.Message):
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    if not user:
-        await message.reply("User not found.")
-        return
-    
-    active_stakes = await get_active_stakes(user_id)
-    if not active_stakes:
-        await message.reply("You have no active stakes.")
-        return
-    
-    response = "Your active stakes:\n"
-    now = datetime.now()
-    for stake in active_stakes:
-        if len(stake) == 8:
-            plan_id, amount, start_date, duration_days = stake[2], stake[3], stake[4], stake[5]
-            currency = "USDT"
-        else:
-            plan_id, amount, currency, start_date, duration_days = stake[2], stake[3], stake[4], stake[5], stake[6]
-        
-        start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
-        
-        plan_desc = {
-            1: "Starter 2% Forever: Unlimited",
-            2: "Pro 3% Forever: Unlimited",
-            3: "Elite 4% Forever: Unlimited",
-            4: "40-Day 4% Daily: 4% (40 days)",
-            5: "60-Day 3% Daily: 3% (60 days)",
-            6: "100-Day 2.5% Daily: 2.5% (100 days)"
-        }[plan_id]
-        
-        if currency == "BNB":
-            response += f"- {plan_desc}: {amount:,.6f} {currency} (Started: {start_date})\n"
-        else:
-            response += f"- {plan_desc}: {amount:,.2f} {currency} (Started: {start_date})\n"
-    await message.reply(response)
-
-@dispatcher.message(Command("viewearnings"))
-async def view_earnings_command(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    if user:
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
-        await message.reply(f"Your total earnings:\n{str(earnings_usdt).rstrip('0').rstrip('.')} USDT\n{str(earnings_trx).rstrip('0').rstrip('.')} TRX\n{str(earnings_bnb).rstrip('0').rstrip('.')} BNB\n{str(earnings_doge).rstrip('0').rstrip('.')} DOGE\n{str(earnings_ton).rstrip('0').rstrip('.')} TON", reply_markup=earnings_menu)
-        await state.set_state(EarningsState.choosing_action)
-    else:
-        await message.reply("User not found.")
-
-@dispatcher.message(Command("referral"))
-async def referral_command(message: types.Message):
-    user_id = message.from_user.id
-    bot_info = await bot.get_me()
-    referral_link = f"https://t.me/CoinStakeBot?start={user_id}"
-    
-    encoded_link = urllib.parse.quote(referral_link)
-    share_button = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➦ Share", url=f"https://t.me/share/url?url={encoded_link}&text=Join CoinStake staking bot!")]
-    ])
-    
-    await message.reply(f"Your referral link: {referral_link}", reply_markup=share_button)
-
-@dispatcher.message(Command("pending"))
-async def pending_withdrawals_command(message: types.Message):
-    user_id = message.from_user.id
-    if not await is_admin(user_id):
-        await message.reply("You are not an admin!")
-        return
-    
-    requests = await get_pending_withdrawals()
-    if not requests:
-        await message.reply("No pending withdrawals in the last 12 hours.")
-        return
-    
-    report = "Pending Withdrawals (last 12 hours):\n"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-    for req in requests:
-        if req[3] == "BNB":
-            report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.6f} {req[3]} | Fee: {req[4]:.6f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
-        else:
-            report += f"ID: {req[0]} | User: {req[1]} | Amount: {req[2]:.2f} {req[3]} | Fee: {req[4]:.2f} {req[3]} | Address: {req[5]} | Time: {req[7]}\n"
-        keyboard.inline_keyboard.append([
-            InlineKeyboardButton(text=f"Complete ID {req[0]}", callback_data=f"complete_{req[0]}"),
-            InlineKeyboardButton(text=f"Reject ID {req[0]}", callback_data=f"reject_{req[0]}")
-        ])
-    
-    await message.reply(report, reply_markup=keyboard)
-
-@dispatcher.message(Command("userstats"))
-async def user_stats_command(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    if not await is_admin(user_id):
-        await message.reply("You are not an admin!")
-        return
-    
-    try:
-        target_user_id = int(message.text.split()[1])
-    except (IndexError, ValueError):
-        await message.reply("Please provide a valid user ID (e.g., /userstats 123456)")
-        return
-    
-    user = await get_user(target_user_id)
-    if not user:
-        await message.reply(f"No user found with ID {target_user_id}.")
-        return
-    
-    balance_usdt, balance_trx, balance_bnb, balance_doge, balance_ton = user[2], user[3], user[4], user[5], user[6]
-    earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(target_user_id)
-    
-    conn = await db_connect()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT amount, currency, timestamp FROM transactions WHERE user_id = ? AND transaction_type = 'deposit'", (target_user_id,))
-        deposits = cursor.fetchall()
-        conn.close()
-    
-    report = f"Stats for User ID {target_user_id} (@{user[1]}):\n\n"
-    report += "Balances:\n"
-    report += f"- USDT: {str(balance_usdt).rstrip('0').rstrip('.')}\n"
-    report += f"- TRX: {str(balance_trx).rstrip('0').rstrip('.')}\n"
-    report += f"- BNB: {str(balance_bnb).rstrip('0').rstrip('.')}\n"
-    report += f"- DOGE: {str(balance_doge).rstrip('0').rstrip('.')}\n"
-    report += f"- TON: {str(balance_ton).rstrip('0').rstrip('.')}\n\n"
-    
-    report += "Earnings:\n"
-    report += f"- USDT: {str(earnings_usdt).rstrip('0').rstrip('.')}\n"
-    report += f"- TRX: {str(earnings_trx).rstrip('0').rstrip('.')}\n"
-    report += f"- BNB: {str(earnings_bnb).rstrip('0').rstrip('.')}\n"
-    report += f"- DOGE: {str(earnings_doge).rstrip('0').rstrip('.')}\n"
-    report += f"- TON: {str(earnings_ton).rstrip('0').rstrip('.')}\n\n"
-    
-    report += "Deposits:\n"
-    if deposits:
-        for deposit in deposits:
-            amount, currency, timestamp = deposit
-            report += f"- {str(amount).rstrip('0').rstrip('.')} {currency} on {timestamp}\n"
-    else:
-        report += "- No deposits found.\n"
-    
-    await message.reply(report)
-
 @dispatcher.message(F.text == "💰 Deposit")
-async def deposit(message: types.Message, state: FSMContext):
-    await deposit_command(message, state)
+async def deposit_menu(message: types.Message):
+    await message.reply("Select a currency to deposit:", reply_markup=deposit_currency_menu)
 
-@dispatcher.message(F.text == "💳 Withdraw")
-async def withdraw(message: types.Message, state: FSMContext):
-    await withdraw_command(message, state)
-
-@dispatcher.message(F.text == "💸 Stake")
-async def stake(message: types.Message, state: FSMContext):
-    await stake_command(message, state)
-
-@dispatcher.message(F.text == "💼 Check Balance")
-async def check_balance(message: types.Message):
-    await check_balance_command(message)
-
-@dispatcher.message(F.text == "📋 Check Staked")
-async def check_staked(message: types.Message):
-    await check_staked_command(message)
-
-@dispatcher.message(F.text == "📈 View Earnings")
-async def view_earnings(message: types.Message, state: FSMContext):
-    await view_earnings_command(message, state)
-
-@dispatcher.message(F.text == "👥 Referral Link")
-async def referral_link(message: types.Message):
-    await referral_command(message)
-
-@dispatcher.message(F.text == "❓ Guide")
-async def guide_command(message: types.Message):
-    guide_text = (
-        "CoinStake Guide:\n"
-        "- 💰 Deposit: Add funds to your wallet.\n"
-        "- 💳 Withdraw: Request a withdrawal.\n"
-        "- 💸 Stake: Lock funds for daily earnings.\n"
-        "- 💼 Check Balance: See your funds.\n"
-        "- 📋 Check Staked: View active stakes.\n"
-        "- 📈 View Earnings: Check your profits.\n"
-        "- 👥 Referral Link: Invite friends, earn 5% bonus.\n"
-        "Need assistance? Contact our admin: @CoinStakeBot_Admin"
-    )
-    await message.reply(guide_text, reply_markup=main_menu)
-
-@dispatcher.message(Command("checkuser"))
-async def check_user_command(message: types.Message):
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    if user:
-        logging.info(f"User {user_id} data: {user}")
-        await message.reply(f"User data: {user}")
-    else:
-        await message.reply("User not found.")
-
-@dispatcher.message(DepositState.selecting_currency)
+@dispatcher.message(F.text.startswith("Deposit "))
 async def process_deposit_currency(message: types.Message, state: FSMContext):
-    currency_map = {
-        "Deposit USDT": "USDT",
-        "Deposit TRX": "TRX",
-        "Deposit BNB": "BNB",
-        "Deposit DOGE": "DOGE",
-        "Deposit TON": "TON"
-    }
-    if message.text == "Back to Main Menu":
-        await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
-        return
-    elif message.text in currency_map:
-        currency = currency_map[message.text]
-        await state.update_data(currency=currency)
-        await message.reply(f"Please enter the amount of {currency} to deposit:", reply_markup=main_menu)
-        await state.set_state(DepositState.waiting_for_amount)
+    currency = message.text.split()[1]
+    await state.update_data(currency=currency)
+    min_deposit = await get_min_deposit(currency)
+    if currency == "BNB":
+        await message.reply(f"Enter the amount to deposit in {currency} (minimum {str(min_deposit).rstrip('0').rstrip('.')} {currency}):")
     else:
-        await message.reply("Please select a valid currency.", reply_markup=deposit_currency_menu)
+        await message.reply(f"Enter the amount to deposit in {currency} (minimum {min_deposit:.2f} {currency}):")
+    await DepositState.waiting_for_amount.set()
 
 @dispatcher.message(DepositState.waiting_for_amount)
 async def process_deposit_amount(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    data = await state.get_data()
-    currency = data["currency"]
-    
-    if message.text == "Back to Main Menu":
-        await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
-        return
-    
     try:
         amount = float(message.text)
-        if amount <= 0:
-            await message.reply("Please enter a positive amount.", reply_markup=main_menu)
-            return
-        
+        data = await state.get_data()
+        currency = data["currency"]
         min_deposit = await get_min_deposit(currency)
         if amount < min_deposit:
             if currency == "BNB":
-                await message.reply(f"Minimum deposit for {currency} is {str(min_deposit).rstrip('0').rstrip('.')} {currency}. Please enter a higher amount.", reply_markup=main_menu)
+                await message.reply(f"Amount must be at least {str(min_deposit).rstrip('0').rstrip('.')} {currency}!")
             else:
-                await message.reply(f"Minimum deposit for {currency} is {min_deposit:.2f} {currency}. Please enter a higher amount.", reply_markup=main_menu)
+                await message.reply(f"Amount must be at least {min_deposit:.2f} {currency}!")
+            await state.finish()
             return
         
+        user_id = message.from_user.id
         address = await generate_payment_address(user_id, amount, currency)
         if address:
             await save_deposit_address(user_id, currency, address)
-            network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
             if currency == "BNB":
-                await message.reply(f"Please send {str(amount).rstrip('0').rstrip('.')} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
+                await message.reply(f"Please send {str(amount).rstrip('0').rstrip('.')} {currency} to this address:\n`{address}`\n\nFunds will be credited after confirmation.", parse_mode="Markdown")
             else:
-                await message.reply(f"Please send {amount:.2f} {currency} to this {network} address within 20 minutes (sent in the next message). Your account will be credited automatically after confirmation.", reply_markup=main_menu)
-            await message.reply(address)
+                await message.reply(f"Please send {amount:.2f} {currency} to this address:\n`{address}`\n\nFunds will be credited after confirmation.", parse_mode="Markdown")
         else:
-            await message.reply("Failed to generate deposit address. Check if API key is correct or try again later.", reply_markup=main_menu)
-        await state.clear()
+            await message.reply("Failed to generate deposit address. Please try again later.")
+        await state.finish()
     except ValueError:
-        await message.reply("Invalid amount. Please enter a number.", reply_markup=main_menu)
+        await message.reply("Please enter a valid number (e.g., 10.5)!")
+        await state.finish()
 
-@dispatcher.message(StakeState.selecting_currency)
+@dispatcher.message(F.text == "💸 Stake")
+async def stake_menu(message: types.Message):
+    await message.reply("Select a currency to stake:", reply_markup=stake_currency_menu)
+
+@dispatcher.message(F.text.startswith("Stake "))
 async def process_stake_currency(message: types.Message, state: FSMContext):
+    currency = message.text.split()[1]
+    await state.update_data(currency=currency)
+    await message.reply("Choose a staking plan:", reply_markup=stake_plan_menu)
+    await StakeState.selecting_plan.set()
+
+@dispatcher.message(StakeState.selecting_plan)
+async def process_stake_plan(message: types.Message, state: FSMContext):
+    plan_map = {
+        "Starter 2% Forever": (1, None),
+        "Pro 3% Forever": (2, None),
+        "Elite 4% Forever": (3, None),
+        "40-Day 4% Daily": (4, 40),
+        "60-Day 3% Daily": (5, 60),
+        "100-Day 2.5% Daily": (6, 100)
+    }
     if message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
+        await state.finish()
         return
     
-    currency_map = {
-        "Stake USDT": "USDT",
-        "Stake TRX": "TRX",
-        "Stake BNB": "BNB",
-        "Stake DOGE": "DOGE",
-        "Stake TON": "TON"
-    }
-    if message.text not in currency_map:
-        await message.reply("Please select a valid currency.", reply_markup=stake_currency_menu)
+    if message.text not in plan_map:
+        await message.reply("Invalid plan! Please select a valid staking plan:", reply_markup=stake_plan_menu)
         return
     
-    currency = currency_map[message.text]
-    await state.update_data(currency=currency)
-    await message.reply(f"Choose a staking plan for {currency}:", reply_markup=stake_plan_menu)
-    await state.set_state(StakeState.selecting_plan)
-
-@dispatcher.message(StakeState.selecting_plan, F.text.in_({"Starter 2% Forever", "Pro 3% Forever", "Elite 4% Forever", "40-Day 4% Daily", "60-Day 3% Daily", "100-Day 2.5% Daily", "Back to Main Menu"}))
-async def process_plan_selection(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
+    plan_id, duration_days = plan_map[message.text]
+    await state.update_data(plan_id=plan_id, duration_days=duration_days)
     data = await state.get_data()
     currency = data["currency"]
-    
-    plan_descriptions = {
-        "Starter 2% Forever": f"Starter 2% Forever: 2% Daily profit, unlimited duration (From {await get_min_limit(currency, 1, 'stake')} {currency})",
-        "Pro 3% Forever": f"Pro 3% Forever: 3% Daily profit, unlimited duration (From {await get_min_limit(currency, 2, 'stake')} {currency})",
-        "Elite 4% Forever": f"Elite 4% Forever: 4% Daily profit, unlimited duration (From {await get_min_limit(currency, 3, 'stake')} {currency})",
-        "40-Day 4% Daily": f"40-Day 4% Daily: 4% Daily profit for 40 days (From {await get_min_limit(currency, 4, 'stake')} {currency})",
-        "60-Day 3% Daily": f"60-Day 3% Daily: 3% Daily profit for 60 days (From {await get_min_limit(currency, 5, 'stake')} {currency})",
-        "100-Day 2.5% Daily": f"100-Day 2.5% Daily: 2.5% Daily profit for 100 days (From {await get_min_limit(currency, 6, 'stake')} {currency})"
-    }
-    
-    if message.text == "Back to Main Menu":
-        await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
-        return
-    
-    selected_plan = message.text
-    if selected_plan in plan_descriptions:
-        await message.reply(plan_descriptions[selected_plan])
-        await message.reply(f"Please enter the amount of {currency} to stake:", reply_markup=stake_plan_menu)
-        plan_id = {
-            "Starter 2% Forever": 1,
-            "Pro 3% Forever": 2,
-            "Elite 4% Forever": 3,
-            "40-Day 4% Daily": 4,
-            "60-Day 3% Daily": 5,
-            "100-Day 2.5% Daily": 6
-        }[selected_plan]
-        await state.update_data(plan_id=plan_id)
-        await state.set_state(StakeState.waiting_for_amount)
+    min_stake = await get_min_limit(currency, plan_id, "stake")
+    if min_stake == 0:
+        await message.reply(f"Enter the amount to stake in {currency}:")
     else:
-        await message.reply("Please select a valid plan from the menu.", reply_markup=stake_plan_menu)
+        if currency == "BNB":
+            await message.reply(f"Enter the amount to stake in {currency} (minimum {str(min_stake).rstrip('0').rstrip('.')} {currency}):")
+        else:
+            await message.reply(f"Enter the amount to stake in {currency} (minimum {min_stake:.2f} {currency}):")
+    await StakeState.waiting_for_amount.set()
 
 @dispatcher.message(StakeState.waiting_for_amount)
 async def process_stake_amount(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    data = await state.get_data()
-    plan_id = data["plan_id"]
-    currency = data["currency"]
-    
-    plan_names = {
-        1: "Starter 2% Forever",
-        2: "Pro 3% Forever",
-        3: "Elite 4% Forever",
-        4: "40-Day 4% Daily",
-        5: "60-Day 3% Daily",
-        6: "100-Day 2.5% Daily"
-    }
-    
-    stake_menu_options = ["Starter 2% Forever", "Pro 3% Forever", "Elite 4% Forever", "40-Day 4% Daily", "60-Day 3% Daily", "100-Day 2.5% Daily", "Back to Main Menu"]
-    if message.text in stake_menu_options:
-        await process_plan_selection(message, state)
-        return
-    
     try:
         amount = float(message.text)
-        if amount <= 0:
-            await message.reply("Please enter a positive amount.", reply_markup=stake_plan_menu)
-            return
+        data = await state.get_data()
+        currency = data["currency"]
+        plan_id = data["plan_id"]
+        duration_days = data["duration_days"]
+        user_id = message.from_user.id
         
         min_stake = await get_min_limit(currency, plan_id, "stake")
-        if amount < min_stake:
+        if min_stake > 0 and amount < min_stake:
             if currency == "BNB":
-                await message.reply(f"Amount must be at least {min_stake:.6f} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
+                await message.reply(f"Amount must be at least {str(min_stake).rstrip('0').rstrip('.')} {currency} for this plan!")
             else:
-                await message.reply(f"Amount must be at least {min_stake:.2f} {currency} for {plan_names[plan_id]}.", reply_markup=stake_plan_menu)
+                await message.reply(f"Amount must be at least {min_stake:.2f} {currency} for this plan!")
+            await state.finish()
             return
         
         user = await get_user(user_id)
-        balance = user[2] if currency == "USDT" else user[3] if currency == "TRX" else user[4] if currency == "BNB" else user[5] if currency == "DOGE" else user[6]
-        if balance < amount:
-            await message.reply(f"Insufficient {currency} balance.", reply_markup=stake_plan_menu)
+        if not user:
+            await message.reply("User not found!")
+            await state.finish()
             return
         
-        duration_days = {1: None, 2: None, 3: None, 4: 40, 5: 60, 6: 100}[plan_id]
-        await update_balance(user_id, -amount, currency)
-        await add_stake(user_id, plan_id, amount, duration_days, currency)
-        await add_transaction(user_id, f"stake_plan_{plan_id}", amount, currency)
-        if currency == "BNB":
-            await message.reply(f"Staked {amount:,.6f} {currency} in {plan_names[plan_id]}. Check your stakes with 'Check Staked'.", reply_markup=main_menu)
+        balance = {"USDT": user[2], "TRX": user[3], "BNB": user[4], "DOGE": user[5], "TON": user[6]}[currency]
+        if amount > balance:
+            if currency == "BNB":
+                await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.6f} {currency}")
+            else:
+                await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.2f} {currency}")
+            await state.finish()
+            return
+        
+        if await update_balance(user_id, -amount, currency) and await add_stake(user_id, plan_id, amount, duration_days, currency):
+            await add_transaction(user_id, "stake", amount, currency)
+            if currency == "BNB":
+                await message.reply(f"Successfully staked {str(amount).rstrip('0').rstrip('.')} {currency}!")
+            else:
+                await message.reply(f"Successfully staked {amount:.2f} {currency}!")
         else:
-            await message.reply(f"Staked {amount:,.2f} {currency} in {plan_names[plan_id]}. Check your stakes with 'Check Staked'.", reply_markup=main_menu)
-        await state.clear()
+            await message.reply("Failed to stake. Please try again.")
+        await state.finish()
+        await message.reply("Choose an option:", reply_markup=main_menu)
     except ValueError:
-        await message.reply("Invalid amount. Please enter a number.", reply_markup=stake_plan_menu)
+        await message.reply("Please enter a valid number (e.g., 10.5)!")
+        await state.finish()
 
-@dispatcher.message(EarningsState.choosing_action)
-async def process_earnings_action(message: types.Message, state: FSMContext):
+@dispatcher.message(F.text == "💼 Check Balance")
+async def check_balance(message: types.Message):
     user_id = message.from_user.id
-    if message.text == "Transfer to Balance":
-        user = await get_user(user_id)
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
-        await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.6f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
-        await state.set_state(EarningsState.entering_amount)
-    elif message.text == "Back to Main Menu":
-        await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
+    user = await get_user(user_id)
+    if user:
+        response = "Your Balances:\n"
+        response += f"USDT: {user[2]:.2f}\n"
+        response += f"TRX: {user[3]:.2f}\n"
+        response += f"BNB: {user[4]:.6f}\n"
+        response += f"DOGE: {user[5]:.2f}\n"
+        response += f"TON: {user[6]:.2f}"
+        await message.reply(response)
     else:
-        await message.reply("Please choose an option from the menu.", reply_markup=earnings_menu)
+        await message.reply("User not found!")
+
+@dispatcher.message(F.text == "📋 Check Staked")
+async def check_staked(message: types.Message):
+    user_id = message.from_user.id
+    stakes = await get_active_stakes(user_id)
+    if not stakes:
+        await message.reply("You have no active stakes.")
+        return
+    
+    response = "Your Active Stakes:\n"
+    plan_names = {1: "Starter 2% Forever", 2: "Pro 3% Forever", 3: "Elite 4% Forever", 
+                  4: "40-Day 4% Daily", 5: "60-Day 3% Daily", 6: "100-Day 2.5% Daily"}
+    for stake in stakes:
+        if len(stake) == 8:
+            stake_id, _, plan_id, amount, start_date, duration_days, last_update, is_expired = stake
+            currency = "USDT"
+        else:
+            stake_id, _, plan_id, amount, currency, start_date, duration_days, last_update, is_expired = stake
+        start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
+        days_passed = (datetime.now() - start_date).days
+        if duration_days:
+            remaining_days = duration_days - days_passed
+            if currency == "BNB":
+                response += f"{plan_names[plan_id]}: {str(amount).rstrip('0').rstrip('.')} {currency}, {remaining_days} days remaining\n"
+            else:
+                response += f"{plan_names[plan_id]}: {amount:.2f} {currency}, {remaining_days} days remaining\n"
+        else:
+            if currency == "BNB":
+                response += f"{plan_names[plan_id]}: {str(amount).rstrip('0').rstrip('.')} {currency}, Forever\n"
+            else:
+                response += f"{plan_names[plan_id]}: {amount:.2f} {currency}, Forever\n"
+    await message.reply(response)
+
+@dispatcher.message(F.text == "📈 View Earnings")
+async def view_earnings(message: types.Message):
+    user_id = message.from_user.id
+    earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
+    response = "Your Earnings:\n"
+    response += f"USDT: {earnings_usdt:.2f}\n"
+    response += f"TRX: {earnings_trx:.2f}\n"
+    response += f"BNB: {earnings_bnb:.6f}\n"
+    response += f"DOGE: {earnings_doge:.2f}\n"
+    response += f"TON: {earnings_ton:.2f}"
+    await message.reply(response, reply_markup=earnings_menu)
+
+@dispatcher.message(F.text == "Transfer to Balance")
+async def transfer_earnings_menu(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
+    response = "Your Earnings:\n"
+    response += f"USDT: {earnings_usdt:.2f}\n"
+    response += f"TRX: {earnings_trx:.2f}\n"
+    response += f"BNB: {earnings_bnb:.6f}\n"
+    response += f"DOGE: {earnings_doge:.2f}\n"
+    response += f"TON: {earnings_ton:.2f}\n\nEnter the amount and currency to transfer (e.g., '10 USDT'):"
+    await message.reply(response)
+    await EarningsState.entering_amount.set()
 
 @dispatcher.message(EarningsState.entering_amount)
-async def process_transfer_amount(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    if message.text == "Back to Main Menu":
-        await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
-        return
-    
+async def process_earnings_transfer(message: types.Message, state: FSMContext):
     try:
         parts = message.text.split()
-        if len(parts) != 2 or parts[1] not in ["USDT", "TRX", "BNB", "DOGE", "TON"]:
-            raise ValueError
-        amount = float(parts[0])
-        currency = parts[1]
-        
-        if amount <= 0:
-            await message.reply("Please enter a positive amount.", reply_markup=earnings_menu)
+        if len(parts) != 2:
+            await message.reply("Please enter amount and currency (e.g., '10 USDT')!")
             return
-        success, response = await transfer_earnings_to_balance(user_id, amount, currency)
-        await message.reply(response, reply_markup=earnings_menu)
+        amount = float(parts[0])
+        currency = parts[1].upper()
+        user_id = message.from_user.id
+        success, result = await transfer_earnings_to_balance(user_id, amount, currency)
+        await message.reply(result)
+        if success:
+            await message.reply("Choose an option:", reply_markup=main_menu)
+            await state.finish()
     except ValueError:
-        await message.reply("Invalid input. Please enter an amount and currency (e.g., '10 TRX' or '5 USDT').", reply_markup=earnings_menu)
+        await message.reply("Please enter a valid amount and currency (e.g., '10 USDT')!")
+    except Exception as e:
+        await message.reply(f"Error: {str(e)}")
+        await state.finish()
 
-@dispatcher.message(WithdrawState.selecting_currency)
+@dispatcher.message(F.text == "💳 Withdraw")
+async def withdraw_menu(message: types.Message):
+    await message.reply("Select a currency to withdraw:", reply_markup=withdraw_currency_menu)
+
+@dispatcher.message(F.text.startswith("Withdraw "))
 async def process_withdraw_currency(message: types.Message, state: FSMContext):
+    currency = message.text.split()[1]
     user_id = message.from_user.id
-    if message.text == "Back to Main Menu":
-        await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.clear()
-        return
-    
-    currency_map = {
-        "Withdraw USDT": "USDT",
-        "Withdraw TRX": "TRX",
-        "Withdraw BNB": "BNB",
-        "Withdraw DOGE": "DOGE",
-        "Withdraw TON": "TON"
-    }
-    if message.text not in currency_map:
-        await message.reply("Please select a valid currency.", reply_markup=withdraw_currency_menu)
-        return
-    
-    currency = currency_map[message.text]
+    wallet_address = await get_wallet_address(user_id, currency)
     await state.update_data(currency=currency)
-    
-    user = await get_user(user_id)
-    earnings = user[5] if currency == "USDT" else user[6] if currency == "TRX" else user[7] if currency == "BNB" else user[8] if currency == "DOGE" else user[9]
-    if currency == "BNB":
-        await message.reply(f"Your available earnings for {currency}: {earnings:,.6f} {currency}. Enter the amount to withdraw:", reply_markup=main_menu)
+    if wallet_address:
+        await message.reply(f"Your current withdrawal address for {currency} is:\n`{wallet_address}`\n\nIs this correct?", 
+                           reply_markup=address_confirmation_menu, parse_mode="Markdown")
+        await WithdrawState.confirming_address.set()
     else:
-        await message.reply(f"Your available earnings for {currency}: {earnings:,.2f} {currency}. Enter the amount to withdraw:", reply_markup=main_menu)
-    await state.set_state(WithdrawState.entering_amount)
+        await message.reply(f"Please enter your {currency} wallet address:")
+        await WithdrawState.entering_new_address.set()
 
-@dispatcher.message(WithdrawState.entering_amount)
-async def process_withdraw_amount(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
+@dispatcher.message(WithdrawState.confirming_address)
+async def process_address_confirmation(message: types.Message, state: FSMContext):
+    if message.text == "Yes":
+        data = await state.get_data()
+        currency = data["currency"]
+        min_withdrawal = await get_min_withdrawal(currency)
+        if currency == "BNB":
+            await message.reply(f"Enter the amount to withdraw in {currency} (minimum {str(min_withdrawal).rstrip('0').rstrip('.')} {currency}):")
+        else:
+            await message.reply(f"Enter the amount to withdraw in {currency} (minimum {min_withdrawal:.2f} {currency}):")
+        await WithdrawState.entering_amount.set()
+    elif message.text == "Change Address":
+        data = await state.get_data()
+        currency = data["currency"]
+        await message.reply(f"Please enter your new {currency} wallet address:")
+        await WithdrawState.entering_new_address.set()
+    else:
+        await message.reply("Returning to main menu.", reply_markup=main_menu)
+        await state.finish()
+
+@dispatcher.message(WithdrawState.entering_new_address)
+async def process_new_address(message: types.Message, state: FSMContext):
+    wallet_address = message.text
     data = await state.get_data()
     currency = data["currency"]
-    
+    user_id = message.from_user.id
+    await save_wallet_address(user_id, currency, wallet_address)
     min_withdrawal = await get_min_withdrawal(currency)
-    fee = get_withdrawal_fee(currency)
-    
+    if currency == "BNB":
+        await message.reply(f"Wallet address updated! Enter the amount to withdraw in {currency} (minimum {str(min_withdrawal).rstrip('0').rstrip('.')} {currency}):")
+    else:
+        await message.reply(f"Wallet address updated! Enter the amount to withdraw in {currency} (minimum {min_withdrawal:.2f} {currency}):")
+    await WithdrawState.entering_amount.set()
+
+@dispatcher.message(WithdrawState.entering_amount)
+async def process_withdrawal_amount(message: types.Message, state: FSMContext):
     try:
         amount = float(message.text)
-        if amount < min_withdrawal:
-            if currency == "BNB":
-                await message.reply(f"Amount must be at least {min_withdrawal:.6f} {currency}.", reply_markup=main_menu)
-            else:
-                await message.reply(f"Amount must be at least {min_withdrawal:.2f} {currency}.", reply_markup=main_menu)
+        data = await state.get_data()
+        currency = data["currency"]
+        user_id = message.from_user.id
+        user = await get_user(user_id)
+        
+        if not user:
+            await message.reply("User not found!")
+            await state.finish()
             return
         
+        balance = {"USDT": user[2], "TRX": user[3], "BNB": user[4], "DOGE": user[5], "TON": user[6]}[currency]
+        min_withdrawal = await get_min_withdrawal(currency)
+        fee = get_withdrawal_fee(currency)
         total_amount = amount + fee
-        user = await get_user(user_id)
-        earnings = user[5] if currency == "USDT" else user[6] if currency == "TRX" else user[7] if currency == "BNB" else user[8] if currency == "DOGE" else user[9]
         
-        if earnings < total_amount:
-            await message.reply(f"Insufficient {currency} earnings.", reply_markup=main_menu)
+        if amount < min_withdrawal:
+            if currency == "BNB":
+                await message.reply(f"Amount must be at least {str(min_withdrawal).rstrip('0').rstrip('.')} {currency}!")
+            else:
+                await message.reply(f"Amount must be at least {min_withdrawal:.2f} {currency}!")
+            await state.finish()
+            return
+        
+        if total_amount > balance:
+            if currency == "BNB":
+                await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.6f} {currency}, Required: {total_amount:.6f} {currency} (including {fee:.6f} fee)")
+            else:
+                await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.2f} {currency}, Required: {total_amount:.2f} {currency} (including {fee:.2f} fee)")
+            await state.finish()
             return
         
         wallet_address = await get_wallet_address(user_id, currency)
         if not wallet_address:
-            network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
-            if currency == "BNB":
-                await message.reply(f"The network fee for withdrawing {currency} is {fee:.6f} {currency}. Please enter your {network} {currency} wallet address:", reply_markup=main_menu)
-            else:
-                await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. Please enter your {network} {currency} wallet address:", reply_markup=main_menu)
-            await state.set_state(WithdrawState.entering_new_address)
+            await message.reply("No wallet address set!")
+            await state.finish()
             return
         
-        if await update_earnings(user_id, -total_amount, currency):
+        status, last_request_time = await check_last_withdrawal(user_id)
+        if status == "Pending" and (datetime.now() - last_request_time).total_seconds() < 24 * 3600:
+            await message.reply("You already have a pending withdrawal request within the last 24 hours!")
+            await state.finish()
+            return
+        
+        if await update_balance(user_id, -total_amount, currency):
             await add_withdraw_request(user_id, amount, currency, fee, wallet_address)
-            network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
+            await add_transaction(user_id, "withdraw", total_amount, currency)
             if currency == "BNB":
-                await message.reply(f"The network fee for withdrawing {currency} is {fee:.6f} {currency}. {amount:,.6f} {currency} has been deducted from your earnings (including fee) and will be transferred to your {network} wallet ({wallet_address}) within 24 hours after review.", reply_markup=main_menu)
+                await message.reply(f"Withdrawal request for {str(amount).rstrip('0').rstrip('.')} {currency} submitted! Fee: {fee:.6f} {currency}. It will be processed soon.")
             else:
-                await message.reply(f"The network fee for withdrawing {currency} is {fee:.4f} {currency}. {amount:,.2f} {currency} has been deducted from your earnings (including fee) and will be transferred to your {network} wallet ({wallet_address}) within 24 hours after review.", reply_markup=main_menu)
-            await state.clear()
+                await message.reply(f"Withdrawal request for {amount:.2f} {currency} submitted! Fee: {fee:.2f} {currency}. It will be processed soon.")
         else:
-            await message.reply("Failed to process withdrawal. Try again.", reply_markup=main_menu)
+            await message.reply("Failed to process withdrawal. Please try again.")
+        await state.finish()
+        await message.reply("Choose an option:", reply_markup=main_menu)
     except ValueError:
-        await message.reply("Invalid amount. Please enter a number.", reply_markup=main_menu)
+        await message.reply("Please enter a valid number (e.g., 10.5)!")
+        await state.finish()
 
-@dispatcher.message(WithdrawState.entering_new_address)
-async def process_new_address(message: types.Message, state: FSMContext):
+@dispatcher.message(F.text == "👥 Referral Link")
+async def referral_link(message: types.Message):
     user_id = message.from_user.id
-    data = await state.get_data()
-    currency = data["currency"]
-    
-    wallet_address = message.text
-    await save_wallet_address(user_id, currency, wallet_address)
-    await state.update_data(wallet_address=wallet_address)
-    
-    fee = get_withdrawal_fee(currency)
-    min_withdrawal = await get_min_withdrawal(currency)
-    if currency == "BNB":
-        await message.reply(f"Network fee for withdrawing {currency} is {fee:.6f} {currency}. Enter the amount to withdraw (minimum {min_withdrawal:.6f} {currency}):", reply_markup=main_menu)
-    else:
-        await message.reply(f"Network fee for withdrawing {currency} is {fee:.4f} {currency}. Enter the amount to withdraw (minimum {min_withdrawal:.2f} {currency}):", reply_markup=main_menu)
-    await state.set_state(WithdrawState.entering_amount)
+    link = f"https://t.me/CoinStakeBot?start={user_id}"
+    await message.reply(f"Your referral link:\n{link}\n\nShare this with friends! You’ll earn 5% of their deposits as a bonus.")
 
-@dispatcher.callback_query(F.data == "view_users")
-async def process_view_users(callback: types.CallbackQuery):
+@dispatcher.message(F.text == "❓ Guide")
+async def send_guide(message: types.Message):
+    guide = (
+        "📖 *CoinStake Guide*\n\n"
+        "1. *Deposit*: Add funds using supported currencies.\n"
+        "2. *Stake*: Choose a plan and stake your funds to earn daily profits.\n"
+        "3. *Withdraw*: Request withdrawals anytime (processed within 24h).\n"
+        "4. *Earnings*: View and transfer your profits to your balance.\n"
+        "5. *Referral*: Invite friends and earn 5% of their deposits.\n\n"
+        "Supported currencies: USDT, TRX, BNB, DOGE, TON.\n"
+        "For help, contact support!"
+    )
+    await message.reply(guide, parse_mode="Markdown")
+
+@dispatcher.message(F.text == "Back to Main Menu")
+async def back_to_main_menu(message: types.Message, state: FSMContext):
+    await state.finish()
+    await message.reply("Returning to main menu.", reply_markup=main_menu)
+
+@dispatcher.callback_query(F.callback_data == "view_users")
+async def view_users(callback: types.CallbackQuery):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
         cursor.execute("SELECT user_id, username FROM users")
         users = cursor.fetchall()
         conn.close()
-        if not users:
-            await callback.message.reply("No users found!")
-        else:
-            response = "Users:\n" + "\n".join(f"ID: {user[0]}, Username: @{user[1]}" for user in users)
-            await callback.message.reply(response)
+        response = "Users:\n" + "\n".join([f"ID: {user[0]}, Username: @{user[1]}" for user in users])
+        await callback.message.edit_text(response if users else "No users found.")
     await callback.answer()
 
-@dispatcher.callback_query(F.data == "edit_balance")
-async def process_edit_balance(callback: types.CallbackQuery, state: FSMContext):
-    await state.set_state(AdminState.waiting_for_edit_balance)
-    await callback.message.reply("Please enter the user ID and new balance (e.g., '123456 50 TRX' or '123456 0.1 BNB'):")
-    current_state = await state.get_state()
-    logging.info(f"State set to: {current_state}")
+@dispatcher.callback_query(F.callback_data == "edit_balance")
+async def edit_balance(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter user ID and new balance (e.g., '12345 100 USDT'):")
+    await AdminState.waiting_for_edit_balance.set()
     await callback.answer()
 
 @dispatcher.message(AdminState.waiting_for_edit_balance)
-async def edit_balance(message: types.Message, state: FSMContext):
-    logging.info(f"Received message in edit_balance: {message.text}")
+async def process_edit_balance(message: types.Message, state: FSMContext):
     try:
         parts = message.text.split()
-        if len(parts) != 3 or parts[2] not in ["USDT", "TRX", "BNB", "DOGE", "TON"]:
-            await message.reply("Invalid input. Use format: 'user_id amount currency' (e.g., '123456 50 TRX')")
+        if len(parts) != 3:
+            await message.reply("Format: 'user_id amount currency' (e.g., '12345 100 USDT')")
             return
-        user_id = int(parts[0])
-        amount = float(parts[1])
-        currency = parts[2]
-        
+        user_id, amount, currency = int(parts[0]), float(parts[1]), parts[2].upper()
         conn = await db_connect()
-        if conn:
-            cursor = conn.cursor()
-            if currency == "USDT":
-                cursor.execute("UPDATE users SET balance_usdt = ? WHERE user_id = ?", (amount, user_id))
-            elif currency == "TRX":
-                cursor.execute("UPDATE users SET balance_trx = ? WHERE user_id = ?", (amount, user_id))
-            elif currency == "BNB":
-                cursor.execute("UPDATE users SET balance_bnb = ? WHERE user_id = ?", (amount, user_id))
-            elif currency == "DOGE":
-                cursor.execute("UPDATE users SET balance_doge = ? WHERE user_id = ?", (amount, user_id))
-            elif currency == "TON":
-                cursor.execute("UPDATE users SET balance_ton = ? WHERE user_id = ?", (amount, user_id))
-            conn.commit()
-            conn.close()
-            await message.reply(f"Balance updated for user {user_id} to {amount} {currency}")
-        await state.clear()
-    except ValueError:
-        await message.reply("Invalid input. Please enter a valid number for ID and amount.")
-    except Exception as e:
-        await message.reply(f"Error: {e}")
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE users SET balance_{currency.lower()} = ? WHERE user_id = ?", (amount, user_id))
+        conn.commit()
+        conn.close()
+        await message.reply(f"Balance for user {user_id} updated to {amount} {currency}!")
+        await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
+    except (ValueError, sqlite3.Error) as e:
+        await message.reply(f"Error: {str(e)}. Please use format 'user_id amount currency'.")
+        await state.finish()
 
-@dispatcher.callback_query(F.data == "edit_stake_limits")
-async def process_edit_stake_limits(callback: types.CallbackQuery, state: FSMContext):
-    await state.set_state(AdminState.waiting_for_edit_stake_limit)
-    await callback.message.reply("Please enter the currency, plan ID, and new minimum stake (e.g., 'USDT 1 50' for Starter 2% Forever):")
-    await callback.answer()
-
-@dispatcher.message(AdminState.waiting_for_edit_stake_limit)
-async def edit_stake_limit(message: types.Message, state: FSMContext):
-    try:
-        parts = message.text.split()
-        if len(parts) != 3 or parts[0] not in ["USDT", "TRX", "BNB", "DOGE", "TON"] or int(parts[1]) not in [1, 2, 3, 4, 5, 6]:
-            await message.reply("Invalid input. Use format: 'currency plan_id amount' (e.g., 'USDT 1 50')")
-            return
-        currency = parts[0]
-        plan_id = int(parts[1])
-        min_amount = float(parts[2])
-        
-        if await update_min_limit(currency, plan_id, min_amount, "stake"):
-            await message.reply(f"Minimum stake for {currency} plan {plan_id} updated to {min_amount} {currency}")
-        else:
-            await message.reply("Failed to update stake limit.")
-        await state.clear()
-    except ValueError:
-        await message.reply("Invalid input. Please enter valid numbers for plan ID and amount.")
-    except Exception as e:
-        await message.reply(f"Error: {e}")
-
-@dispatcher.callback_query(F.data == "edit_deposit_limits")
-async def process_edit_deposit_limits(callback: types.CallbackQuery, state: FSMContext):
-    await state.set_state(AdminState.waiting_for_edit_deposit_limit)
-    await callback.message.reply("Please enter the currency and new minimum deposit (e.g., 'USDT 20'):")
-    await callback.answer()
-
-@dispatcher.message(AdminState.waiting_for_edit_deposit_limit)
-async def edit_deposit_limit(message: types.Message, state: FSMContext):
-    try:
-        parts = message.text.split()
-        if len(parts) != 2 or parts[0] not in ["USDT", "TRX", "BNB", "DOGE", "TON"]:
-            await message.reply("Invalid input. Use format: 'currency amount' (e.g., 'USDT 20')")
-            return
-        currency = parts[0]
-        min_amount = float(parts[1])
-        
-        if await update_min_limit(currency, 0, min_amount, "deposit"):
-            await message.reply(f"Minimum deposit for {currency} updated to {min_amount} {currency}")
-        else:
-            await message.reply("Failed to update deposit limit.")
-        await state.clear()
-    except ValueError:
-        await message.reply("Invalid input. Please enter a valid number for amount.")
-    except Exception as e:
-        await message.reply(f"Error: {e}")
-
-@dispatcher.callback_query(F.data == "delete_user")
-async def process_delete_user(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.reply("Please enter the user ID to delete:")
-    await state.set_state(AdminState.waiting_for_delete_user)
+@dispatcher.callback_query(F.callback_data == "delete_user")
+async def delete_user(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter the user ID to delete:")
+    await AdminState.waiting_for_delete_user.set()
     await callback.answer()
 
 @dispatcher.message(AdminState.waiting_for_delete_user)
-async def delete_user(message: types.Message, state: FSMContext):
+async def process_delete_user(message: types.Message, state: FSMContext):
     try:
         user_id = int(message.text)
         conn = await db_connect()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-            cursor.execute("DELETE FROM stakes WHERE user_id = ?", (user_id,))
-            cursor.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
-            cursor.execute("DELETE FROM wallets WHERE user_id = ?", (user_id,))
-            conn.commit()
-            conn.close()
-            await message.reply(f"User with ID {user_id} has been deleted!")
-        await state.clear()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+        await message.reply(f"User {user_id} deleted!")
+        await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
-        await message.reply("Invalid ID. Please enter a number.")
+        await message.reply("Please enter a valid user ID!")
+        await state.finish()
 
-@dispatcher.callback_query(F.data == "stats")
-async def process_stats(callback: types.CallbackQuery):
+@dispatcher.callback_query(F.callback_data == "stats")
+async def bot_stats(callback: types.CallbackQuery):
     conn = await db_connect()
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(user_id), SUM(balance_usdt), SUM(balance_trx), SUM(balance_bnb), SUM(balance_doge), SUM(balance_ton) FROM users")
-        stats = cursor.fetchone()
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
+        cursor.execute("SELECT SUM(amount) FROM stakes WHERE is_expired = 0")
+        total_staked = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT SUM(amount) FROM transactions WHERE transaction_type = 'deposit'")
+        total_deposits = cursor.fetchone()[0] or 0
         conn.close()
-        user_count, total_usdt, total_trx, total_bnb, total_doge, total_ton = stats
-        await callback.message.reply(f"Bot Stats:\nUsers: {user_count}\nTotal USDT: {total_usdt or 0:,.2f}\nTotal TRX: {total_trx or 0:,.2f}\nTotal BNB: {total_bnb or 0:,.6f}\nTotal DOGE: {total_doge or 0:,.2f}\nTotal TON: {total_ton or 0:,.2f}")
+        response = f"Bot Stats:\nUsers: {total_users}\nTotal Staked: {total_staked:.2f}\nTotal Deposits: {total_deposits:.2f}"
+        await callback.message.edit_text(response)
     await callback.answer()
 
-@dispatcher.callback_query(F.data == "add_admin")
-async def process_add_admin(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.username.lower() not in ["coinstakebot_admin", "tyhi87655"]:
-        await callback.answer("Only the main admins (@CoinStakeBot_Admin or @Tyhi87655) can add admins!")
-        return
-    await callback.message.reply("Please enter the user ID you want to add as an admin:")
-    await state.set_state(AdminState.waiting_for_add_admin_id)
+@dispatcher.callback_query(F.callback_data == "edit_stake_limits")
+async def edit_stake_limits(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter currency, plan ID, and min amount (e.g., 'USDT 1 50'):")
+    await AdminState.waiting_for_edit_stake_limit.set()
+    await callback.answer()
+
+@dispatcher.message(AdminState.waiting_for_edit_stake_limit)
+async def process_edit_stake_limit(message: types.Message, state: FSMContext):
+    try:
+        parts = message.text.split()
+        if len(parts) != 3:
+            await message.reply("Format: 'currency plan_id min_amount' (e.g., 'USDT 1 50')")
+            return
+        currency, plan_id, min_amount = parts[0].upper(), int(parts[1]), float(parts[2])
+        if await update_min_limit(currency, plan_id, min_amount, "stake"):
+            await message.reply(f"Stake limit for {currency} plan {plan_id} updated to {min_amount}!")
+        else:
+            await message.reply("Failed to update stake limit.")
+        await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
+    except ValueError:
+        await message.reply("Invalid format! Use 'currency plan_id min_amount' (e.g., 'USDT 1 50')")
+        await state.finish()
+
+@dispatcher.callback_query(F.callback_data == "edit_deposit_limits")
+async def edit_deposit_limits(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter currency and min deposit amount (e.g., 'USDT 20'):")
+    await AdminState.waiting_for_edit_deposit_limit.set()
+    await callback.answer()
+
+@dispatcher.message(AdminState.waiting_for_edit_deposit_limit)
+async def process_edit_deposit_limit(message: types.Message, state: FSMContext):
+    try:
+        parts = message.text.split()
+        if len(parts) != 2:
+            await message.reply("Format: 'currency min_amount' (e.g., 'USDT 20')")
+            return
+        currency, min_amount = parts[0].upper(), float(parts[1])
+        if await update_min_limit(currency, 0, min_amount, "deposit"):
+            await message.reply(f"Deposit limit for {currency} updated to {min_amount}!")
+        else:
+            await message.reply("Failed to update deposit limit.")
+        await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
+    except ValueError:
+        await message.reply("Invalid format! Use 'currency min_amount' (e.g., 'USDT 20')")
+        await state.finish()
+
+@dispatcher.callback_query(F.callback_data == "add_admin")
+async def add_admin(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter the user ID to add as admin:")
+    await AdminState.waiting_for_add_admin_id.set()
     await callback.answer()
 
 @dispatcher.message(AdminState.waiting_for_add_admin_id)
-async def add_admin_id(message: types.Message, state: FSMContext):
+async def process_add_admin(message: types.Message, state: FSMContext):
     try:
-        new_admin_id = int(message.text)
+        user_id = int(message.text)
         conn = await db_connect()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (new_admin_id,))
-            conn.commit()
-            conn.close()
-            await message.reply(f"User with ID {new_admin_id} has been added as an admin!")
-        await state.clear()
-    except ValueError:
-        await message.reply("Invalid ID. Please enter a number.")
-
-@dispatcher.callback_query(F.data == "remove_admin")
-async def process_remove_admin(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.username.lower() not in ["coinstakebot_admin", "tyhi87655"]:
-        await callback.answer("Only the main admins (@CoinStakeBot_Admin or @Tyhi87655) can remove admins!")
-        return
-    
-    conn = await db_connect()
-    if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM admins WHERE user_id != 363541134")
-        admins = cursor.fetchall()
-        conn.close()
-        
-        if not admins:
-            await callback.message.reply("No other admins exist!")
-            await callback.answer()
-            return
-        
-        remove_menu = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"Remove {admin[0]}", callback_data=f"remove_{admin[0]}")] for admin in admins
-        ])
-        await callback.message.reply("Admins to remove:", reply_markup=remove_menu)
-    await callback.answer()
-
-@dispatcher.callback_query(F.data.startswith("remove_"))
-async def confirm_remove_admin(callback: types.CallbackQuery):
-    admin_id = int(callback.data.split("_")[1])
-    conn = await db_connect()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM admins WHERE user_id = ?", (admin_id,))
+        cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
         conn.commit()
         conn.close()
-        await callback.message.reply(f"Admin with ID {admin_id} has been removed!")
+        await message.reply(f"User {user_id} added as admin!")
+        await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
+    except ValueError:
+        await message.reply("Please enter a valid user ID!")
+        await state.finish()
+
+@dispatcher.callback_query(F.callback_data == "remove_admin")
+async def remove_admin(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter the user ID to remove from admins:")
+    await AdminState.waiting_for_remove_admin_id.set()
     await callback.answer()
 
-@dispatcher.message()
-async def handle_invalid(message: types.Message):
-    await message.reply("Please choose an option from the menu.", reply_markup=main_menu)
+@dispatcher.message(AdminState.waiting_for_remove_admin_id)
+async def process_remove_admin(message: types.Message, state: FSMContext):
+    try:
+        user_id = int(message.text)
+        conn = await db_connect()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+        await message.reply(f"User {user_id} removed from admins!")
+        await state.finish()
+        admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
+    except ValueError:
+        await message.reply("Please enter a valid user ID!")
+        await state.finish()
+
+@dispatcher.callback_query(F.callback_data.startswith("complete_"))
+async def complete_withdrawal_request(callback: types.CallbackQuery):
+    request_id = int(callback.data.split("_")[1])
+    await complete_withdrawal(request_id)
+    details = await get_withdrawal_details(request_id)
+    if details:
+        user_id, amount, currency, wallet_address = details
+        if currency == "BNB":
+            await bot.send_message(user_id, f"Your withdrawal of {str(amount).rstrip('0').rstrip('.')} {currency} to {wallet_address} has been completed!")
+        else:
+            await bot.send_message(user_id, f"Your withdrawal of {amount:.2f} {currency} to {wallet_address} has been completed!")
+    await callback.message.edit_text(f"Withdrawal ID {request_id} marked as completed.")
+    await callback.answer()
+
+@dispatcher.callback_query(F.callback_data.startswith("reject_"))
+async def reject_withdrawal_request(callback: types.CallbackQuery):
+    request_id = int(callback.data.split("_")[1])
+    details = await get_withdrawal_details(request_id)
+    if details:
+        user_id, amount, currency, wallet_address = details
+        fee = get_withdrawal_fee(currency)
+        total_amount = amount + fee
+        await update_balance(user_id, total_amount, currency)
+        await reject_withdrawal(request_id)
+        if currency == "BNB":
+            await bot.send_message(user_id, f"Your withdrawal of {str(amount).rstrip('0').rstrip('.')} {currency} to {wallet_address} was rejected. {str(total_amount).rstrip('0').rstrip('.')} {currency} has been refunded.")
+        else:
+            await bot.send_message(user_id, f"Your withdrawal of {amount:.2f} {currency} to {wallet_address} was rejected. {total_amount:.2f} {currency} has been refunded.")
+    await callback.message.edit_text(f"Withdrawal ID {request_id} rejected and refunded.")
+    await callback.answer()
 
 async def main():
-    logging.info("Starting bot...")
     await initialize_database()
     asyncio.create_task(schedule_reports())
-    webhook_url = "https://new-staking-bot.onrender.com/telegram-webhook"  # آدرس سرور Render
+    await bot.delete_webhook(drop_pending_updates=True)
+    webhook_url = "https://new-staking-bot.onrender.com/telegram-webhook"
     await bot.set_webhook(webhook_url)
     logging.info(f"Webhook set to {webhook_url}")
-
-async def run_web():
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))  # پورت 10000 که Render تشخیص داده
+    app_runner = web.AppRunner(app)
+    await app_runner.setup()
+    site = web.TCPSite(app_runner, '0.0.0.0', 8080)
     await site.start()
-    logging.info("Web server started.")
+    logging.info("Server started on port 8080")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    import aiohttp
-    logging.info("Initializing app...")
-    loop = asyncio.get_event_loop()
-    try:
-        loop.create_task(main())
-        loop.create_task(run_web())
-        loop.run_forever()
-    except KeyboardInterrupt:
-        logging.info("Shutting down...")
-    except Exception as e:
-        logging.error(f"Error: {e}")
+    asyncio.run(main())
