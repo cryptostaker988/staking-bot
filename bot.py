@@ -922,8 +922,7 @@ async def admin_panel(message: types.Message):
          InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
         [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings")]  # دکمه جدید
     ])
-    await message.reply("Admin Panel:", reply_markup=admin_menu)
-    
+      
     if username.lower() in ["coinstakebot_admin", "tyhi87655"]:
         admin_menu.inline_keyboard.append([
             InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
