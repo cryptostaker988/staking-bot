@@ -964,7 +964,7 @@ async def process_user_id(message: types.Message, state: FSMContext):
         await message.reply("Select the currency for earnings:", reply_markup=currency_menu)
     except ValueError:
         await message.reply("Please enter a valid user ID (numbers only)!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data.startswith("currency_"))
 async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
@@ -994,7 +994,7 @@ async def process_earnings_amount(message: types.Message, state: FSMContext):
         cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
         if not cursor.fetchone():
             await message.reply(f"No user found with ID {user_id}!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             conn.close()
             return
         
@@ -1003,12 +1003,12 @@ async def process_earnings_amount(message: types.Message, state: FSMContext):
         conn.close()
         
         await message.reply(f"Earnings for user {user_id} updated to {amount} {currency.upper()}!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 0.01)!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.message(F.text == "💰 Deposit")
 async def deposit_menu(message: types.Message):
@@ -1037,7 +1037,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Amount must be at least {str(min_deposit).rstrip('0').rstrip('.')} {currency}!")
             else:
                 await message.reply(f"Amount must be at least {min_deposit:.2f} {currency}!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         user_id = message.from_user.id
@@ -1050,10 +1050,10 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Please send {amount:.2f} {currency} to this address:\n`{address}`\n\nFunds will be credited after confirmation.", parse_mode="Markdown")
         else:
             await message.reply("Failed to generate deposit address. Please try again later.")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 10.5)!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.message(F.text == "💸 Stake")
 async def stake_menu(message: types.Message):
@@ -1078,7 +1078,7 @@ async def process_stake_plan(message: types.Message, state: FSMContext):
     }
     if message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         return
     
     if message.text not in plan_map:
@@ -1115,13 +1115,13 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Amount must be at least {str(min_stake).rstrip('0').rstrip('.')} {currency} for this plan!")
             else:
                 await message.reply(f"Amount must be at least {min_stake:.2f} {currency} for this plan!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         user = await get_user(user_id)
         if not user:
             await message.reply("User not found!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         balance = {"USDT": user[2], "TRX": user[3], "BNB": user[4], "DOGE": user[5], "TON": user[6]}[currency]
@@ -1130,7 +1130,7 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.6f} {currency}")
             else:
                 await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.2f} {currency}")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         if await update_balance(user_id, -amount, currency) and await add_stake(user_id, plan_id, amount, duration_days, currency):
@@ -1141,11 +1141,11 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Successfully staked {amount:.2f} {currency}!")
         else:
             await message.reply("Failed to stake. Please try again.")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         await message.reply("Choose an option:", reply_markup=main_menu)
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 10.5)!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.message(F.text == "💼 Check Balance")
 async def check_balance(message: types.Message):
@@ -1233,12 +1233,12 @@ async def process_earnings_transfer(message: types.Message, state: FSMContext):
         await message.reply(result)
         if success:
             await message.reply("Choose an option:", reply_markup=main_menu)
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
     except ValueError:
         await message.reply("Please enter a valid amount and currency (e.g., '10 USDT')!")
     except Exception as e:
         await message.reply(f"Error: {str(e)}")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.message(F.text == "💳 Withdraw")
 async def withdraw_menu(message: types.Message):
@@ -1303,7 +1303,7 @@ async def process_withdrawal_amount(message: types.Message, state: FSMContext):
         
         if not user:
             await message.reply("User not found!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         balance = {"USDT": user[2], "TRX": user[3], "BNB": user[4], "DOGE": user[5], "TON": user[6]}[currency]
@@ -1316,7 +1316,7 @@ async def process_withdrawal_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Amount must be at least {str(min_withdrawal).rstrip('0').rstrip('.')} {currency}!")
             else:
                 await message.reply(f"Amount must be at least {min_withdrawal:.2f} {currency}!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         if total_amount > balance:
@@ -1324,19 +1324,19 @@ async def process_withdrawal_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.6f} {currency}, Required: {total_amount:.6f} {currency} (including {fee:.6f} fee)")
             else:
                 await message.reply(f"Insufficient balance! Your {currency} balance: {balance:.2f} {currency}, Required: {total_amount:.2f} {currency} (including {fee:.2f} fee)")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         wallet_address = await get_wallet_address(user_id, currency)
         if not wallet_address:
             await message.reply("No wallet address set!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         status, last_request_time = await check_last_withdrawal(user_id)
         if status == "Pending" and (datetime.now() - last_request_time).total_seconds() < 24 * 3600:
             await message.reply("You already have a pending withdrawal request within the last 24 hours!")
-            await state.finish()
+            await state.clear()  # تغییر از finish به clear
             return
         
         if await update_balance(user_id, -total_amount, currency):
@@ -1348,11 +1348,11 @@ async def process_withdrawal_amount(message: types.Message, state: FSMContext):
                 await message.reply(f"Withdrawal request for {amount:.2f} {currency} submitted! Fee: {fee:.2f} {currency}. It will be processed soon.")
         else:
             await message.reply("Failed to process withdrawal. Please try again.")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         await message.reply("Choose an option:", reply_markup=main_menu)
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 10.5)!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.message(F.text == "👥 Referral Link")
 async def referral_link(message: types.Message):
@@ -1376,7 +1376,7 @@ async def send_guide(message: types.Message):
 
 @dispatcher.message(F.text == "Back to Main Menu")
 async def back_to_main_menu(message: types.Message, state: FSMContext):
-    await state.finish()
+    await state.clear()  # تغییر از finish به clear
     await message.reply("Returning to main menu.", reply_markup=main_menu)
 
 @dispatcher.callback_query(F.callback_data == "view_users")
@@ -1411,12 +1411,12 @@ async def process_edit_balance(message: types.Message, state: FSMContext):
         conn.commit()
         conn.close()
         await message.reply(f"Balance for user {user_id} updated to {amount} {currency}!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except (ValueError, sqlite3.Error) as e:
         await message.reply(f"Error: {str(e)}. Please use format 'user_id amount currency'.")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data == "delete_user")
 async def delete_user(callback: types.CallbackQuery, state: FSMContext):
@@ -1434,12 +1434,12 @@ async def process_delete_user(message: types.Message, state: FSMContext):
         conn.commit()
         conn.close()
         await message.reply(f"User {user_id} deleted!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Please enter a valid user ID!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data == "stats")
 async def bot_stats(callback: types.CallbackQuery):
@@ -1475,12 +1475,12 @@ async def process_edit_stake_limit(message: types.Message, state: FSMContext):
             await message.reply(f"Stake limit for {currency} plan {plan_id} updated to {min_amount}!")
         else:
             await message.reply("Failed to update stake limit.")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Invalid format! Use 'currency plan_id min_amount' (e.g., 'USDT 1 50')")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data == "edit_deposit_limits")
 async def edit_deposit_limits(callback: types.CallbackQuery, state: FSMContext):
@@ -1500,12 +1500,12 @@ async def process_edit_deposit_limit(message: types.Message, state: FSMContext):
             await message.reply(f"Deposit limit for {currency} updated to {min_amount}!")
         else:
             await message.reply("Failed to update deposit limit.")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Invalid format! Use 'currency min_amount' (e.g., 'USDT 20')")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data == "add_admin")
 async def add_admin(callback: types.CallbackQuery, state: FSMContext):
@@ -1523,12 +1523,12 @@ async def process_add_admin(message: types.Message, state: FSMContext):
         conn.commit()
         conn.close()
         await message.reply(f"User {user_id} added as admin!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Please enter a valid user ID!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data == "remove_admin")
 async def remove_admin(callback: types.CallbackQuery, state: FSMContext):
@@ -1546,12 +1546,12 @@ async def process_remove_admin(message: types.Message, state: FSMContext):
         conn.commit()
         conn.close()
         await message.reply(f"User {user_id} removed from admins!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
         admin_menu = await get_admin_menu(message.from_user.username or "Unknown")
         await message.reply("Admin Panel:", reply_markup=admin_menu)
     except ValueError:
         await message.reply("Please enter a valid user ID!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.callback_data.startswith("complete_"))
 async def complete_withdrawal_request(callback: types.CallbackQuery):
