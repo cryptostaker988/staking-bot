@@ -939,6 +939,28 @@ async def admin_panel(message: types.Message):
     
     admin_menu = await get_admin_menu(username)
     await message.reply("Admin Panel:", reply_markup=admin_menu)
+    logging.info(f"Admin panel shown to user {user_id}")
+
+# هندلر دیباگ برای همه callbackها
+@dispatcher.callback_query()
+async def debug_callback(callback: types.CallbackQuery):
+    logging.info(f"Callback received: {callback.data}")
+    await callback.answer()
+
+# هندلر اصلاح‌شده برای View Users
+@dispatcher.callback_query(lambda c: c.data == "view_users")
+async def view_users(callback: types.CallbackQuery):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username FROM users")
+        users = cursor.fetchall()
+        conn.close()
+        response = "Users:\n" + "\n".join([f"ID: {user[0]}, Username: @{user[1]}" for user in users])
+        await callback.message.edit_text(response if users else "No users found.")
+    else:
+        await callback.message.edit_text("Database error!")
+    await callback.answer()
 
 @dispatcher.callback_query(F.callback_data == "admin_edit_earnings")
 async def process_edit_earnings(callback: types.CallbackQuery, state: FSMContext):
