@@ -1151,9 +1151,11 @@ async def guide_command(message: types.Message):
         "- 💼 Check Balance: See your funds.\n"
         "- 📋 Check Staked: View active stakes.\n"
         "- 📈 View Earnings: Check your profits.\n"
-        "- 👥 Referral Link: Invite friends, earn 5% bonus."
+        "- 👥 Referral Link: Invite friends, earn 5% bonus.\n"
+        "Need assistance? Contact our admin: @CoinStakeBot_Admin"
     )
     await message.reply(guide_text, reply_markup=main_menu)
+
 @dispatcher.message(Command("checkuser"))
 async def check_user_command(message: types.Message):
     user_id = message.from_user.id
