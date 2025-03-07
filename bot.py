@@ -919,8 +919,10 @@ async def admin_panel(message: types.Message):
         [InlineKeyboardButton(text="Delete User", callback_data="delete_user"),
          InlineKeyboardButton(text="Bot Stats", callback_data="stats")],
         [InlineKeyboardButton(text="Edit Stake Limits", callback_data="edit_stake_limits"),
-         InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")]
+         InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
+        [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings")]  # دکمه جدید
     ])
+    await message.reply("Admin Panel:", reply_markup=admin_menu)
     
     if username.lower() in ["coinstakebot_admin", "tyhi87655"]:
         admin_menu.inline_keyboard.append([
