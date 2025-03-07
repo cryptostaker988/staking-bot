@@ -6,6 +6,7 @@ from aiogram import F
 from aiogram.filters import Command
 import sqlite3
 import os
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
@@ -14,6 +15,12 @@ from aiohttp import web
 import hmac
 import hashlib
 import json
+from aiogram.fsm.state import State, StatesGroup
+
+class EditEarningsState(StatesGroup):
+    user_id = State()  # گرفتن آیدی کاربر
+    currency = State()  # انتخاب ارز
+    amount = State()   # گرفتن مقدار سود
 
 API_TOKEN = os.getenv("API_TOKEN", "8149978835:AAFcLTmqXz8o0VYu0zXiLQXElcsMI03J8CA")
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY", "4ECPB3V-PH6MKES-GZR79RZ-8HMMRSC")
@@ -930,6 +937,69 @@ async def admin_panel(message: types.Message):
         ])
     
     await message.reply("Admin Panel:", reply_markup=admin_menu)
+
+@dispatcher.callback_query(F.callback_data == "admin_edit_earnings")
+async def process_edit_earnings(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Enter the user ID to edit earnings:")
+    await EditEarningsState.user_id.set()
+    await callback.answer()
+
+@dispatcher.message(EditEarningsState.user_id)
+async def process_user_id(message: types.Message, state: FSMContext):
+    user_id = message.text
+    try:
+        user_id = int(user_id)  # مطمئن می‌شیم آیدی عدد باشه
+        await state.update_data(user_id=user_id)
+        
+        # منوی انتخاب ارز
+        currency_menu = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="BNB", callback_data="currency_BNB"),
+             InlineKeyboardButton(text="USDT", callback_data="currency_USDT")],
+            [InlineKeyboardButton(text="TRX", callback_data="currency_TRX"),
+             InlineKeyboardButton(text="DOGE", callback_data="currency_DOGE")],
+            [InlineKeyboardButton(text="TON", callback_data="currency_TON"),
+             InlineKeyboardButton(text="Back", callback_data="cancel_edit")]
+        ])
+        await message.reply("Select the currency for earnings:", reply_markup=currency_menu)
+    except ValueError:
+        await message.reply("Please enter a valid user ID (numbers only)!")
+        await state.finish()
+
+@dispatcher.callback_query(F.callback_data.startswith("currency_"))
+async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
+    currency = callback.data.split("_")[1]  # مثلاً "BNB" از "currency_BNB"
+    await state.update_data(currency=currency)
+    await callback.message.edit_text(f"Enter the new earnings amount for {currency} (e.g., 0.01):")
+    await EditEarningsState.amount.set()
+    await callback.answer()
+
+@dispatcher.message(EditEarningsState.amount)
+async def process_earnings_amount(message: types.Message, state: FSMContext):
+    try:
+        amount = float(message.text)  # تبدیل به عدد
+        data = await state.get_data()
+        user_id = data["user_id"]
+        currency = data["currency"]
+        
+        conn = await db_connect()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET earnings = ? WHERE user_id = ?", (amount, user_id))
+        conn.commit()
+        conn.close()
+        
+        await message.reply(f"Earnings for user {user_id} updated to {amount} {currency}!")
+        await state.finish()
+        await message.reply("Admin Panel:", reply_markup=admin_menu)
+    except ValueError:
+        await message.reply("Please enter a valid number (e.g., 0.01)!")
+        await state.finish()
+
+@dispatcher.callback_query(F.callback_data == "cancel_edit")
+async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await callback.message.edit_text("Admin Panel:", reply_markup=admin_menu)  # برگشت به منوی ادمین
+    await callback.answer()
+
 
 @dispatcher.message(Command("deposit"))
 async def deposit_command(message: types.Message, state: FSMContext):
