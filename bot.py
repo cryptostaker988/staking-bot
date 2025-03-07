@@ -957,6 +957,34 @@ async def view_users(callback: types.CallbackQuery):
         users = cursor.fetchall()
         conn.close()
         response = "Users:\n" + "\n".join([f"ID: {user[0]}, Username: @{user[1]}" for user in users])
+        await callback.message.reply(response if users else "No users found.")  # تغییر به reply
+    else:
+        await callback.message.reply("Database error!")  # تغییر به reply
+    await callback.answer()
+
+# هندلر اصلاح‌شده برای Edit Balance
+@dispatcher.callback_query(lambda c: c.data == "edit_balance")
+async def edit_balance(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.reply("Enter user ID and new balance (e.g., '12345 100 USDT'):")  # تغییر به reply
+    await AdminState.waiting_for_edit_balance.set()
+    await callback.answer()
+
+# هندلر دیباگ برای همه callbackها
+@dispatcher.callback_query()
+async def debug_callback(callback: types.CallbackQuery):
+    logging.info(f"Callback received: {callback.data}")
+    await callback.answer()
+
+# هندلر اصلاح‌شده برای View Users
+@dispatcher.callback_query(lambda c: c.data == "view_users")
+async def view_users(callback: types.CallbackQuery):
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username FROM users")
+        users = cursor.fetchall()
+        conn.close()
+        response = "Users:\n" + "\n".join([f"ID: {user[0]}, Username: @{user[1]}" for user in users])
         await callback.message.edit_text(response if users else "No users found.")
     else:
         await callback.message.edit_text("Database error!")
@@ -1440,9 +1468,9 @@ async def process_edit_balance(message: types.Message, state: FSMContext):
         await message.reply(f"Error: {str(e)}. Please use format 'user_id amount currency'.")
         await state.clear()  # تغییر از finish به clear
 
-@dispatcher.callback_query(F.callback_data == "delete_user")
+@dispatcher.callback_query(lambda c: c.data == "delete_user")
 async def delete_user(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Enter the user ID to delete:")
+    await callback.message.reply("Enter the user ID to delete:")
     await AdminState.waiting_for_delete_user.set()
     await callback.answer()
 
@@ -1463,7 +1491,7 @@ async def process_delete_user(message: types.Message, state: FSMContext):
         await message.reply("Please enter a valid user ID!")
         await state.clear()  # تغییر از finish به clear
 
-@dispatcher.callback_query(F.callback_data == "stats")
+@dispatcher.callback_query(lambda c: c.data == "stats")
 async def bot_stats(callback: types.CallbackQuery):
     conn = await db_connect()
     if conn:
@@ -1476,7 +1504,7 @@ async def bot_stats(callback: types.CallbackQuery):
         total_deposits = cursor.fetchone()[0] or 0
         conn.close()
         response = f"Bot Stats:\nUsers: {total_users}\nTotal Staked: {total_staked:.2f}\nTotal Deposits: {total_deposits:.2f}"
-        await callback.message.edit_text(response)
+        await callback.message.reply(response)
     await callback.answer()
 
 @dispatcher.callback_query(F.callback_data == "edit_stake_limits")
