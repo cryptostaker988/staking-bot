@@ -938,7 +938,7 @@ async def admin_panel(message: types.Message):
         return
     
     admin_menu = await get_admin_menu(username)
-    await message.reply("Admin Panel:", reply_markup=admin_menu)
+    await bot.send_message(message.chat.id, "Admin Panel:", reply_markup=admin_menu)  # تغییر به send_message
     logging.info(f"Admin panel shown to user {user_id}")
 
 # هندلر دیباگ برای همه callbackها
@@ -962,10 +962,9 @@ async def view_users(callback: types.CallbackQuery):
         await callback.message.reply("Database error!")  # تغییر به reply
     await callback.answer()
 
-# هندلر اصلاح‌شده برای Edit Balance
-@dispatcher.callback_query(lambda c: c.data == "edit_balance")
+@dispatcher.callback_query(F.callback_data == "edit_balance")
 async def edit_balance(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.reply("Enter user ID and new balance (e.g., '12345 100 USDT'):")  # تغییر به reply
+    await callback.message.edit_text("Enter user ID and new balance (e.g., '12345 100 USDT'):")
     await AdminState.waiting_for_edit_balance.set()
     await callback.answer()
 
@@ -975,7 +974,7 @@ async def debug_callback(callback: types.CallbackQuery):
     logging.info(f"Callback received: {callback.data}")
     await callback.answer()
 
-# هندلر اصلاح‌شده برای View Users
+# هندلر برای View Users
 @dispatcher.callback_query(lambda c: c.data == "view_users")
 async def view_users(callback: types.CallbackQuery):
     conn = await db_connect()
@@ -1470,7 +1469,7 @@ async def process_edit_balance(message: types.Message, state: FSMContext):
 
 @dispatcher.callback_query(lambda c: c.data == "delete_user")
 async def delete_user(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.reply("Enter the user ID to delete:")
+    await callback.message.edit_text("Enter the user ID to delete:")  # تغییر از reply به edit_text
     await AdminState.waiting_for_delete_user.set()
     await callback.answer()
 
@@ -1504,7 +1503,7 @@ async def bot_stats(callback: types.CallbackQuery):
         total_deposits = cursor.fetchone()[0] or 0
         conn.close()
         response = f"Bot Stats:\nUsers: {total_users}\nTotal Staked: {total_staked:.2f}\nTotal Deposits: {total_deposits:.2f}"
-        await callback.message.reply(response)
+        await callback.message.edit_text(response)  # تغییر از reply به edit_text
     await callback.answer()
 
 @dispatcher.callback_query(F.callback_data == "edit_stake_limits")
