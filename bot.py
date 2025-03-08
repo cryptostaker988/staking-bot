@@ -1006,10 +1006,10 @@ async def process_earnings_amount(message: types.Message, state: FSMContext):
                 InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
             ])
         await message.reply("Admin Panel:", reply_markup=admin_menu)
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 0.01)!")
-        await state.finish()
+        await state.clear()  # تغییر از finish به clear
 
 @dispatcher.callback_query(F.data == "cancel_edit")
 async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
