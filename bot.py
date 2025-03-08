@@ -9,6 +9,7 @@ import os
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import urllib.parse
 from aiohttp import web
 import hmac
@@ -939,8 +940,8 @@ async def admin_panel(message: types.Message):
 
 @dispatcher.callback_query(F.data == "admin_edit_earnings")
 async def process_edit_earnings(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.reply("Enter the user ID to edit earnings:")  # تغییر به reply
-    await EditEarningsState.user_id.set()
+    await callback.message.reply("Enter the user ID to edit earnings:")
+    await state.set_state(EditEarningsState.user_id)  # تغییر به set_state
     await callback.answer()
 
 @dispatcher.message(EditEarningsState.user_id)
@@ -968,8 +969,8 @@ async def process_user_id(message: types.Message, state: FSMContext):
 async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
     currency = callback.data.split("_")[1]  # مثلاً "BNB" از "currency_BNB"
     await state.update_data(currency=currency)
-    await callback.message.reply(f"Enter the new earnings amount for {currency} (e.g., 0.01):")  # تغییر به reply
-    await EditEarningsState.amount.set()
+    await callback.message.reply(f"Enter the new earnings amount for {currency} (e.g., 0.01):")
+    await state.set_state(EditEarningsState.amount)  # تغییر به set_state
     await callback.answer()
 
 @dispatcher.message(EditEarningsState.amount)
