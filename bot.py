@@ -471,8 +471,13 @@ async def transfer_earnings_to_balance(user_id, amount, currency):
             "DOGE": earnings_doge,
             "TON": earnings_ton
         }[currency]
+        logging.info(f"Transfer request: user_id={user_id}, amount={amount}, currency={currency}, available_earnings={earnings}")
         if amount > 0 and amount <= earnings:
-            if await update_balance(user_id, amount, currency) and await update_earnings(user_id, -amount, currency):
+            update_balance_result = await update_balance(user_id, amount, currency)
+            logging.info(f"update_balance result: {update_balance_result}")
+            update_earnings_result = await update_earnings(user_id, -amount, currency)
+            logging.info(f"update_earnings result: {update_earnings_result}")
+            if update_balance_result and update_earnings_result:
                 await add_transaction(user_id, "earnings_transfer", amount, currency)
                 user = await get_user(user_id)
                 new_balance = {
@@ -487,12 +492,15 @@ async def transfer_earnings_to_balance(user_id, amount, currency):
                 else:
                     return True, f"{amount:.2f} {currency} has been transferred to your balance. New {currency} balance: {new_balance:.2f} {currency}"
             else:
+                logging.error(f"Transfer failed: update_balance={update_balance_result}, update_earnings={update_earnings_result}")
                 return False, "Failed to transfer earnings. Try again."
         else:
+            logging.info(f"Insufficient earnings: requested={amount}, available={earnings}")
             if currency == "BNB":
                 return False, f"You don’t have enough earnings. Your current {currency} earnings: {earnings:.6f} {currency}"
             else:
                 return False, f"You don’t have enough earnings. Your current {currency} earnings: {earnings:.2f} {currency}"
+    logging.error(f"User not found: user_id={user_id}")
     return False, "User not found."
 
 async def get_wallet_address(user_id, currency):
