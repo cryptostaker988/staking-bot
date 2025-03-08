@@ -380,83 +380,23 @@ async def add_stake(user_id, plan_id, amount, duration_days, currency):
     return False
 
 async def calculate_total_earnings(user_id):
-    conn = await db_connect()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (int(user_id),))
-        earnings = cursor.fetchone()
-        past_earnings_usdt, past_earnings_trx, past_earnings_bnb, past_earnings_doge, past_earnings_ton = earnings if earnings else (0, 0, 0, 0, 0)
-        
-        stakes = await get_user_stakes(user_id)
-        total_new_earnings_usdt = 0
-        total_new_earnings_trx = 0
-        total_new_earnings_bnb = 0
-        total_new_earnings_doge = 0
-        total_new_earnings_ton = 0
-        now = datetime.now()
-        
-        for stake in stakes:
-            if len(stake) == 8:
-                stake_id, _, plan_id, amount, start_date, duration_days, last_update, is_expired = stake
-                currency = "USDT"
-            else:
-                stake_id, _, plan_id, amount, currency, start_date, duration_days, last_update, is_expired = stake
-            
-            start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
-            last_update = datetime.strptime(last_update, '%Y-%m-%d %H:%M:%S.%f') if isinstance(last_update, str) else last_update
-            days_passed = (now - start_date).total_seconds() / (24 * 3600)
-            days_since_last = (now - last_update).total_seconds() / (24 * 3600)
-            
-            profit_rate = {1: 0.02, 2: 0.03, 3: 0.04, 4: 0.04, 5: 0.03, 6: 0.025}[plan_id]
-            
-            if duration_days is None or days_passed < duration_days:
-                total_days = int(days_passed)
-                stake_earnings = amount * profit_rate * total_days
-                new_days = int(days_since_last)
-                if new_days > 0:
-                    new_earnings = amount * profit_rate * new_days
-                    if currency == "USDT":
-                        total_new_earnings_usdt += new_earnings
-                    elif currency == "TRX":
-                        total_new_earnings_trx += new_earnings
-                    elif currency == "BNB":
-                        total_new_earnings_bnb += new_earnings
-                    elif currency == "DOGE":
-                        total_new_earnings_doge += new_earnings
-                    elif currency == "TON":
-                        total_new_earnings_ton += new_earnings
-                    cursor.execute("UPDATE stakes SET last_earning_update = ? WHERE id = ?", (now, stake_id))
-            elif days_passed >= duration_days and is_expired == 0:
-                stake_earnings = amount * profit_rate * duration_days
-                if currency == "USDT":
-                    total_new_earnings_usdt += stake_earnings
-                elif currency == "TRX":
-                    total_new_earnings_trx += stake_earnings
-                elif currency == "BNB":
-                    total_new_earnings_bnb += stake_earnings
-                elif currency == "DOGE":
-                    total_new_earnings_doge += stake_earnings
-                elif currency == "TON":
-                    total_new_earnings_ton += stake_earnings
-                cursor.execute("UPDATE stakes SET last_earning_update = ?, is_expired = 1 WHERE id = ?", (now, stake_id))
-        
-        if total_new_earnings_usdt > 0:
-            await update_earnings(user_id, total_new_earnings_usdt, "USDT")
-        if total_new_earnings_trx > 0:
-            await update_earnings(user_id, total_new_earnings_trx, "TRX")
-        if total_new_earnings_bnb > 0:
-            await update_earnings(user_id, total_new_earnings_bnb, "BNB")
-        if total_new_earnings_doge > 0:
-            await update_earnings(user_id, total_new_earnings_doge, "DOGE")
-        if total_new_earnings_ton > 0:
-            await update_earnings(user_id, total_new_earnings_ton, "TON")
-        
-        cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (int(user_id),))
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = cursor.fetchone()
-        conn.commit()
-        conn.close()
-        return earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton
-    return 0, 0, 0, 0, 0
+    user = await get_user(user_id)
+    if user:
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[7], user[8], user[9], user[10], user[11]
+        return {
+            "USDT": earnings_usdt,
+            "TRX": earnings_trx,
+            "BNB": earnings_bnb,
+            "DOGE": earnings_doge,
+            "TON": earnings_ton
+        }
+    return {
+        "USDT": 0,
+        "TRX": 0,
+        "BNB": 0,
+        "DOGE": 0,
+        "TON": 0
+    }
 
 async def add_transaction(user_id, transaction_type, amount, currency):
     conn = await db_connect()
@@ -1131,8 +1071,16 @@ async def view_earnings_command(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     user = await get_user(user_id)
     if user:
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = await calculate_total_earnings(user_id)
-        await message.reply(f"Your total earnings:\n{str(earnings_usdt).rstrip('0').rstrip('.')} USDT\n{str(earnings_trx).rstrip('0').rstrip('.')} TRX\n{str(earnings_bnb).rstrip('0').rstrip('.')} BNB\n{str(earnings_doge).rstrip('0').rstrip('.')} DOGE\n{str(earnings_ton).rstrip('0').rstrip('.')} TON", reply_markup=earnings_menu)
+        earnings = await calculate_total_earnings(user_id)
+        await message.reply(
+            f"Your total earnings:\n"
+            f"{earnings['USDT']:,.2f} USDT\n"
+            f"{earnings['TRX']:,.2f} TRX\n"
+            f"{earnings['BNB']:,.6f} BNB\n"
+            f"{earnings['DOGE']:,.2f} DOGE\n"
+            f"{earnings['TON']:,.2f} TON",
+            reply_markup=earnings_menu
+        )
         await state.set_state(EarningsState.choosing_action)
     else:
         await message.reply("User not found.")
