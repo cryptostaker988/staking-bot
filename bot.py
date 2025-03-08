@@ -1429,14 +1429,13 @@ async def process_earnings_action(message: types.Message, state: FSMContext):
 async def process_earnings_action(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == "Transfer to Balance":
-        # ساخت کیبورد اینلاین برای انتخاب ارز
+        # ساخت کیبورد اینلاین برای انتخاب ارز بدون دکمه Back
         currency_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="USDT", callback_data="transfer_USDT"),
              InlineKeyboardButton(text="TRX", callback_data="transfer_TRX")],
             [InlineKeyboardButton(text="BNB", callback_data="transfer_BNB"),
              InlineKeyboardButton(text="DOGE", callback_data="transfer_DOGE")],
-            [InlineKeyboardButton(text="TON", callback_data="transfer_TON")],
-            [InlineKeyboardButton(text="Back", callback_data="transfer_back")]
+            [InlineKeyboardButton(text="TON", callback_data="transfer_TON")]
         ])
         await message.reply("Select the currency you want to transfer to your balance:", reply_markup=currency_keyboard)
         await state.set_state(EarningsState.entering_amount)
@@ -1449,18 +1448,10 @@ async def process_earnings_action(message: types.Message, state: FSMContext):
 @dispatcher.callback_query(F.data.startswith("transfer_"))
 async def process_transfer_currency(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    action = callback.data
-    
-    if action == "transfer_back":
-        await callback.message.edit_text("Your total earnings:", reply_markup=earnings_menu)
-        await state.set_state(EarningsState.choosing_action)
-        await callback.answer()
-        return
-    
-    currency = action.split("_")[1]  # مثلاً "USDT" از "transfer_USDT"
+    currency = callback.data.split("_")[1]  # مثلاً "USDT" از "transfer_USDT"
     user = await get_user(user_id)
     if not user:
-        await callback.message.edit_text("User not found.", reply_markup=main_menu)
+        await callback.message.reply("User not found.", reply_markup=main_menu)
         await state.clear()
         await callback.answer()
         return
@@ -1473,11 +1464,11 @@ async def process_transfer_currency(callback: types.CallbackQuery, state: FSMCon
         "TON": user[11]
     }[currency]
     
-    # فرمت اعشاری برای پیام
+    # استفاده از reply به‌جای edit_text
     if currency == "BNB":
-        await callback.message.edit_text(f"Enter the amount of {currency} to transfer (Available: {earnings:,.6f} {currency}):")
+        await callback.message.reply(f"Enter the amount of {currency} to transfer (Available: {earnings:,.6f} {currency}):", reply_markup=earnings_menu)
     else:
-        await callback.message.edit_text(f"Enter the amount of {currency} to transfer (Available: {earnings:,.2f} {currency}):")
+        await callback.message.reply(f"Enter the amount of {currency} to transfer (Available: {earnings:,.2f} {currency}):", reply_markup=earnings_menu)
     
     await state.update_data(currency=currency)
     await callback.answer()
