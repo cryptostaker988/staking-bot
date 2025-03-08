@@ -948,10 +948,8 @@ async def process_edit_earnings(callback: types.CallbackQuery, state: FSMContext
 async def process_user_id(message: types.Message, state: FSMContext):
     user_id = message.text
     try:
-        user_id = int(user_id)  # مطمئن می‌شیم آیدی عدد باشه
+        user_id = int(user_id)
         await state.update_data(user_id=user_id)
-        
-        # منوی انتخاب ارز
         currency_menu = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="BNB", callback_data="currency_BNB"),
              InlineKeyboardButton(text="USDT", callback_data="currency_USDT")],
@@ -963,7 +961,7 @@ async def process_user_id(message: types.Message, state: FSMContext):
         await message.reply("Select the currency for earnings:", reply_markup=currency_menu)
     except ValueError:
         await message.reply("Please enter a valid user ID (numbers only)!")
-        await state.finish()
+            await state.clear()  # جایگزین finish
 
 @dispatcher.callback_query(F.data.startswith("currency_"))
 async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
@@ -1013,7 +1011,7 @@ async def process_earnings_amount(message: types.Message, state: FSMContext):
 
 @dispatcher.callback_query(F.data == "cancel_edit")
 async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
-    await state.finish()
+        await state.clear()
     admin_menu = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="View Users", callback_data="view_users"),
          InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
