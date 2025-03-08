@@ -961,7 +961,7 @@ async def process_user_id(message: types.Message, state: FSMContext):
         await message.reply("Select the currency for earnings:", reply_markup=currency_menu)
     except ValueError:
         await message.reply("Please enter a valid user ID (numbers only)!")
-            await state.clear()  # جایگزین finish
+            await state.clear()
 
 @dispatcher.callback_query(F.data.startswith("currency_"))
 async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
