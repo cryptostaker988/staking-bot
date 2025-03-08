@@ -471,7 +471,7 @@ async def add_transaction(user_id, transaction_type, amount, currency):
 async def transfer_earnings_to_balance(user_id, amount, currency):
     user = await get_user(user_id)
     if user:
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[7], user[8], user[9], user[10], user[11]  # اصلاح اندیس‌ها
         earnings = {
             "USDT": earnings_usdt,
             "TRX": earnings_trx,
@@ -1461,7 +1461,7 @@ async def process_earnings_action(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == "Transfer to Balance":
         user = await get_user(user_id)
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[5], user[6], user[7], user[8], user[9]
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[7], user[8], user[9], user[10], user[11]  # اصلاح اندیس‌ها
         await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.6f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
         await state.set_state(EarningsState.entering_amount)
     elif message.text == "Back to Main Menu":
