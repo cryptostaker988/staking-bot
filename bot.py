@@ -925,9 +925,10 @@ async def admin_panel(message: types.Message):
          InlineKeyboardButton(text="Bot Stats", callback_data="stats")],
         [InlineKeyboardButton(text="Edit Stake Limits", callback_data="edit_stake_limits"),
          InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
-        [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings")]  # دکمه جدید
+        [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings"),
+         InlineKeyboardButton(text="View Referrals", callback_data="view_referrals")],  # دکمه جدید
     ])
-      
+    
     if username.lower() in ["coinstakebot_admin", "tyhi87655"]:
         admin_menu.inline_keyboard.append([
             InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
@@ -1545,6 +1546,7 @@ async def process_new_address(message: types.Message, state: FSMContext):
     await state.set_state(WithdrawState.entering_amount)
 
 @dispatcher.callback_query(F.data == "view_users")
+
 async def process_view_users(callback: types.CallbackQuery):
     logging.info(f"View Users callback triggered by {callback.from_user.id}")
     conn = await db_connect()
@@ -1557,6 +1559,31 @@ async def process_view_users(callback: types.CallbackQuery):
             await callback.message.reply("No users found!")
         else:
             response = "Users:\n" + "\n".join(f"ID: {user[0]}, Username: @{user[1]}" for user in users)
+            await callback.message.reply(response)
+    await callback.answer()
+
+@dispatcher.callback_query(F.data == "view_referrals")
+async def process_view_referrals(callback: types.CallbackQuery):
+    logging.info(f"View Referrals callback triggered by {callback.from_user.id}")
+    conn = await db_connect()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.user_id, u.username, r.user_id AS referrer_id, r.username AS referrer_username
+            FROM users u
+            LEFT JOIN users r ON u.referrer_id = r.user_id
+            WHERE u.referrer_id IS NOT NULL
+        """)
+        referrals = cursor.fetchall()
+        conn.close()
+        
+        if not referrals:
+            await callback.message.reply("No referrals found!")
+        else:
+            response = "Referral List:\n"
+            for ref in referrals:
+                user_id, username, referrer_id, referrer_username = ref
+                response += f"User: @{username} (ID: {user_id}) invited by @{referrer_username} (ID: {referrer_id})\n"
             await callback.message.reply(response)
     await callback.answer()
 
