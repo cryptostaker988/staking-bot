@@ -1011,7 +1011,7 @@ async def process_earnings_amount(message: types.Message, state: FSMContext):
 
 @dispatcher.callback_query(F.data == "cancel_edit")
 async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
-        await state.clear()
+    await state.clear()
     admin_menu = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="View Users", callback_data="view_users"),
          InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
@@ -1029,7 +1029,6 @@ async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
         ])
     await callback.message.reply("Admin Panel:", reply_markup=admin_menu)
     await callback.answer()
-
 
 @dispatcher.message(Command("deposit"))
 async def deposit_command(message: types.Message, state: FSMContext):
