@@ -937,9 +937,9 @@ async def admin_panel(message: types.Message):
     
     await message.reply("Admin Panel:", reply_markup=admin_menu)
 
-@dispatcher.callback_query(F.callback_data == "admin_edit_earnings")
+@dispatcher.callback_query(F.data == "admin_edit_earnings")
 async def process_edit_earnings(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Enter the user ID to edit earnings:")
+    await callback.message.reply("Enter the user ID to edit earnings:")  # تغییر به reply
     await EditEarningsState.user_id.set()
     await callback.answer()
 
@@ -964,11 +964,11 @@ async def process_user_id(message: types.Message, state: FSMContext):
         await message.reply("Please enter a valid user ID (numbers only)!")
         await state.finish()
 
-@dispatcher.callback_query(F.callback_data.startswith("currency_"))
+@dispatcher.callback_query(F.data.startswith("currency_"))
 async def process_currency_selection(callback: types.CallbackQuery, state: FSMContext):
     currency = callback.data.split("_")[1]  # مثلاً "BNB" از "currency_BNB"
     await state.update_data(currency=currency)
-    await callback.message.edit_text(f"Enter the new earnings amount for {currency} (e.g., 0.01):")
+    await callback.message.reply(f"Enter the new earnings amount for {currency} (e.g., 0.01):")  # تغییر به reply
     await EditEarningsState.amount.set()
     await callback.answer()
 
@@ -982,22 +982,53 @@ async def process_earnings_amount(message: types.Message, state: FSMContext):
         
         conn = await db_connect()
         cursor = conn.cursor()
-        # آپدیت ستون مخصوص ارز (مثلاً earnings_bnb)
         cursor.execute(f"UPDATE users SET earnings_{currency} = ? WHERE user_id = ?", (amount, user_id))
         conn.commit()
         conn.close()
         
         await message.reply(f"Earnings for user {user_id} updated to {amount} {currency.upper()}!")
-        await state.finish()
+        
+        # برگرداندن منوی ادمین
+        admin_menu = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="View Users", callback_data="view_users"),
+             InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
+            [InlineKeyboardButton(text="Delete User", callback_data="delete_user"),
+             InlineKeyboardButton(text="Bot Stats", callback_data="stats")],
+            [InlineKeyboardButton(text="Edit Stake Limits", callback_data="edit_stake_limits"),
+             InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
+            [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings"),
+             InlineKeyboardButton(text="View Referrals", callback_data="view_referrals")],
+        ])
+        if message.from_user.username.lower() in ["coinstakebot_admin", "tyhi87655"]:
+            admin_menu.inline_keyboard.append([
+                InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
+                InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
+            ])
         await message.reply("Admin Panel:", reply_markup=admin_menu)
+        await state.finish()
     except ValueError:
         await message.reply("Please enter a valid number (e.g., 0.01)!")
         await state.finish()
 
-@dispatcher.callback_query(F.callback_data == "cancel_edit")
+@dispatcher.callback_query(F.data == "cancel_edit")
 async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
     await state.finish()
-    await callback.message.edit_text("Admin Panel:", reply_markup=admin_menu)  # برگشت به منوی ادمین
+    admin_menu = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="View Users", callback_data="view_users"),
+         InlineKeyboardButton(text="Edit Balance", callback_data="edit_balance")],
+        [InlineKeyboardButton(text="Delete User", callback_data="delete_user"),
+         InlineKeyboardButton(text="Bot Stats", callback_data="stats")],
+        [InlineKeyboardButton(text="Edit Stake Limits", callback_data="edit_stake_limits"),
+         InlineKeyboardButton(text="Edit Deposit Limits", callback_data="edit_deposit_limits")],
+        [InlineKeyboardButton(text="Edit Earnings", callback_data="admin_edit_earnings"),
+         InlineKeyboardButton(text="View Referrals", callback_data="view_referrals")],
+    ])
+    if callback.from_user.username.lower() in ["coinstakebot_admin", "tyhi87655"]:
+        admin_menu.inline_keyboard.append([
+            InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
+            InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
+        ])
+    await callback.message.reply("Admin Panel:", reply_markup=admin_menu)  # تغییر به reply
     await callback.answer()
 
 
