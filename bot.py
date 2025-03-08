@@ -1408,14 +1408,13 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
 async def process_earnings_action(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == "Transfer to Balance":
-        # ساخت کیبورد اینلاین برای انتخاب ارز
+        # ساخت کیبورد اینلاین برای انتخاب ارز بدون دکمه Back
         currency_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="USDT", callback_data="transfer_USDT"),
              InlineKeyboardButton(text="TRX", callback_data="transfer_TRX")],
             [InlineKeyboardButton(text="BNB", callback_data="transfer_BNB"),
              InlineKeyboardButton(text="DOGE", callback_data="transfer_DOGE")],
-            [InlineKeyboardButton(text="TON", callback_data="transfer_TON")],
-            [InlineKeyboardButton(text="Back", callback_data="transfer_back")]
+            [InlineKeyboardButton(text="TON", callback_data="transfer_TON")]
         ])
         await message.reply("Select the currency you want to transfer to your balance:", reply_markup=currency_keyboard)
         await state.set_state(EarningsState.entering_amount)
