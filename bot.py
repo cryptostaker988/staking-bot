@@ -313,51 +313,59 @@ async def update_balance(user_id, amount, currency):
 
 async def update_earnings(user_id, earnings_change, currency):
     conn = await db_connect()
-    if conn:
+    if not conn:
+        logging.error(f"Failed to connect to database for user_id={user_id}, currency={currency}")
+        return False
+    
+    try:
         cursor = conn.cursor()
         cursor.execute("SELECT earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton FROM users WHERE user_id = ?", (int(user_id),))
         user = cursor.fetchone()
-        if user:
-            earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user
-            if currency == "USDT":
-                new_earnings = earnings_usdt + earnings_change
-                if new_earnings < 0:
-                    conn.close()
-                    return False
-                cursor.execute("UPDATE users SET earnings_usdt = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), int(user_id)))
-            elif currency == "TRX":
-                new_earnings = earnings_trx + earnings_change
-                if new_earnings < 0:
-                    conn.close()
-                    return False
-                cursor.execute("UPDATE users SET earnings_trx = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), int(user_id)))
-            elif currency == "BNB":
-                new_earnings = earnings_bnb + earnings_change
-                if new_earnings < 0:
-                    conn.close()
-                    return False
-                cursor.execute("UPDATE users SET earnings_bnb = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), int(user_id)))
-            elif currency == "DOGE":
-                new_earnings = earnings_doge + earnings_change
-                if new_earnings < 0:
-                    conn.close()
-                    return False
-                cursor.execute("UPDATE users SET earnings_doge = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), int(user_id)))
-            elif currency == "TON":
-                new_earnings = earnings_ton + earnings_change
-                if new_earnings < 0:
-                    conn.close()
-                    return False
-                cursor.execute("UPDATE users SET earnings_ton = ?, last_earning_update = ? WHERE user_id = ?", 
-                              (new_earnings, datetime.now(), int(user_id)))
-            conn.commit()
+        if not user:
+            logging.error(f"User not found in update_earnings: user_id={user_id}")
+            conn.close()
+            return False
+        
+        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user
+        logging.info(f"Current earnings for user_id={user_id}: USDT={earnings_usdt}, TRX={earnings_trx}, BNB={earnings_bnb}, DOGE={earnings_doge}, TON={earnings_ton}")
+        
+        if currency == "USDT":
+            new_earnings = earnings_usdt + earnings_change
+            column = "earnings_usdt"
+        elif currency == "TRX":
+            new_earnings = earnings_trx + earnings_change
+            column = "earnings_trx"
+        elif currency == "BNB":
+            new_earnings = earnings_bnb + earnings_change
+            column = "earnings_bnb"
+        elif currency == "DOGE":
+            new_earnings = earnings_doge + earnings_change
+            column = "earnings_doge"
+        elif currency == "TON":
+            new_earnings = earnings_ton + earnings_change
+            column = "earnings_ton"
+        else:
+            logging.error(f"Invalid currency: {currency}")
+            conn.close()
+            return False
+        
+        if new_earnings < 0:
+            logging.info(f"New earnings would be negative: {new_earnings} for {currency}")
+            conn.close()
+            return False
+        
+        logging.info(f"Updating {column} to {new_earnings} for user_id={user_id}")
+        cursor.execute(f"UPDATE users SET {column} = ?, last_earning_update = ? WHERE user_id = ?", 
+                       (new_earnings, datetime.now(), int(user_id)))
+        conn.commit()
+        logging.info(f"Successfully updated {column} for user_id={user_id}")
         conn.close()
         return True
-    return False
+    
+    except Exception as e:
+        logging.error(f"Error in update_earnings for user_id={user_id}, currency={currency}: {e}")
+        conn.close()
+        return False
 
 async def add_stake(user_id, plan_id, amount, duration_days, currency):
     conn = await db_connect()
