@@ -1408,15 +1408,79 @@ async def process_stake_amount(message: types.Message, state: FSMContext):
 async def process_earnings_action(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == "Transfer to Balance":
-        user = await get_user(user_id)
-        earnings_usdt, earnings_trx, earnings_bnb, earnings_doge, earnings_ton = user[7], user[8], user[9], user[10], user[11]  # اصلاح اندیس‌ها
-        await message.reply(f"Please enter the amount you want to transfer to your balance:\nAvailable:\n{earnings_usdt:,.2f} USDT\n{earnings_trx:,.2f} TRX\n{earnings_bnb:,.6f} BNB\n{earnings_doge:,.2f} DOGE\n{earnings_ton:,.2f} TON\nSpecify currency (e.g., '10 TRX' or '5 USDT'):", reply_markup=earnings_menu)
+        # ساخت کیبورد اینلاین برای انتخاب ارز
+        currency_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="USDT", callback_data="transfer_USDT"),
+             InlineKeyboardButton(text="TRX", callback_data="transfer_TRX")],
+            [InlineKeyboardButton(text="BNB", callback_data="transfer_BNB"),
+             InlineKeyboardButton(text="DOGE", callback_data="transfer_DOGE")],
+            [InlineKeyboardButton(text="TON", callback_data="transfer_TON")],
+            [InlineKeyboardButton(text="Back", callback_data="transfer_back")]
+        ])
+        await message.reply("Select the currency you want to transfer to your balance:", reply_markup=currency_keyboard)
         await state.set_state(EarningsState.entering_amount)
     elif message.text == "Back to Main Menu":
         await message.reply("Returning to main menu.", reply_markup=main_menu)
         await state.clear()
     else:
         await message.reply("Please choose an option from the menu.", reply_markup=earnings_menu)
+
+@dispatcher.message(EarningsState.choosing_action)
+async def process_earnings_action(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    if message.text == "Transfer to Balance":
+        # ساخت کیبورد اینلاین برای انتخاب ارز
+        currency_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="USDT", callback_data="transfer_USDT"),
+             InlineKeyboardButton(text="TRX", callback_data="transfer_TRX")],
+            [InlineKeyboardButton(text="BNB", callback_data="transfer_BNB"),
+             InlineKeyboardButton(text="DOGE", callback_data="transfer_DOGE")],
+            [InlineKeyboardButton(text="TON", callback_data="transfer_TON")],
+            [InlineKeyboardButton(text="Back", callback_data="transfer_back")]
+        ])
+        await message.reply("Select the currency you want to transfer to your balance:", reply_markup=currency_keyboard)
+        await state.set_state(EarningsState.entering_amount)
+    elif message.text == "Back to Main Menu":
+        await message.reply("Returning to main menu.", reply_markup=main_menu)
+        await state.clear()
+    else:
+        await message.reply("Please choose an option from the menu.", reply_markup=earnings_menu)
+
+@dispatcher.callback_query(F.data.startswith("transfer_"))
+async def process_transfer_currency(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    action = callback.data
+    
+    if action == "transfer_back":
+        await callback.message.edit_text("Your total earnings:", reply_markup=earnings_menu)
+        await state.set_state(EarningsState.choosing_action)
+        await callback.answer()
+        return
+    
+    currency = action.split("_")[1]  # مثلاً "USDT" از "transfer_USDT"
+    user = await get_user(user_id)
+    if not user:
+        await callback.message.edit_text("User not found.", reply_markup=main_menu)
+        await state.clear()
+        await callback.answer()
+        return
+    
+    earnings = {
+        "USDT": user[7],
+        "TRX": user[8],
+        "BNB": user[9],
+        "DOGE": user[10],
+        "TON": user[11]
+    }[currency]
+    
+    # فرمت اعشاری برای پیام
+    if currency == "BNB":
+        await callback.message.edit_text(f"Enter the amount of {currency} to transfer (Available: {earnings:,.6f} {currency}):")
+    else:
+        await callback.message.edit_text(f"Enter the amount of {currency} to transfer (Available: {earnings:,.2f} {currency}):")
+    
+    await state.update_data(currency=currency)
+    await callback.answer()
 
 @dispatcher.message(EarningsState.entering_amount)
 async def process_transfer_amount(message: types.Message, state: FSMContext):
@@ -1426,20 +1490,22 @@ async def process_transfer_amount(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
+    data = await state.get_data()
+    currency = data.get("currency")  # ارز از state میاد
+    if not currency:
+        await message.reply("Please select a currency first.", reply_markup=earnings_menu)
+        await state.clear()
+        return
+    
     try:
-        parts = message.text.split()
-        if len(parts) != 2 or parts[1] not in ["USDT", "TRX", "BNB", "DOGE", "TON"]:
-            raise ValueError
-        amount = float(parts[0])
-        currency = parts[1]
-        
+        amount = float(message.text)
         if amount <= 0:
             await message.reply("Please enter a positive amount.", reply_markup=earnings_menu)
             return
         success, response = await transfer_earnings_to_balance(user_id, amount, currency)
         await message.reply(response, reply_markup=earnings_menu)
     except ValueError:
-        await message.reply("Invalid input. Please enter an amount and currency (e.g., '10 TRX' or '5 USDT').", reply_markup=earnings_menu)
+        await message.reply("Invalid input. Please enter a number (e.g., 10).", reply_markup=earnings_menu)
 
 @dispatcher.message(WithdrawState.selecting_currency)
 async def process_withdraw_currency(message: types.Message, state: FSMContext):
