@@ -1028,7 +1028,7 @@ async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text="Add Admin", callback_data="add_admin"),
             InlineKeyboardButton(text="Remove Admin", callback_data="remove_admin")
         ])
-    await callback.message.reply("Admin Panel:", reply_markup=admin_menu)  # تغییر به reply
+    await callback.message.reply("Admin Panel:", reply_markup=admin_menu)
     await callback.answer()
 
 
