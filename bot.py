@@ -520,7 +520,7 @@ async def generate_payment_address(user_id, amount, currency):
             else:
                 error_msg = data.get("message", "Unknown error")
                 logging.error(f"Failed to get pay_address: {error_msg}, status={status}")
-                return None
+                return f"Error: {error_msg} (Status: {status})"
 
 async def get_min_limit(currency, plan_id=0, limit_type="deposit"):
     conn = await db_connect()
@@ -1277,7 +1277,9 @@ async def process_deposit_amount(message: types.Message, state: FSMContext):
             return
         
         address = await generate_payment_address(user_id, amount, currency)
-        if address:
+        if isinstance(address, str) and address.startswith("Error:"):
+            await message.reply(f"Failed to generate deposit address: {address}. Please try again later or contact support.", reply_markup=main_menu)
+        elif address:
             await save_deposit_address(user_id, currency, address)
             network = "TRC-20" if currency in ["USDT", "TRX"] else "BEP-20" if currency == "BNB" else "Main Network"
             if currency == "BNB":
