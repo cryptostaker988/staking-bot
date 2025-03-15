@@ -451,6 +451,63 @@ async def transfer_earnings_to_balance(user_id, amount, currency):
     logging.error(f"User not found: user_id={user_id}")
     return False, "User not found."
 
+async def update_stake_earnings():
+    conn = await db_connect()
+    if not conn:
+        logging.error("Failed to connect to database for earnings update")
+        return
+    
+    cursor = conn.cursor()
+    now = datetime.now()
+    
+    # گرفتن همه استیک‌های فعال
+    cursor.execute("SELECT * FROM stakes WHERE is_expired = 0")
+    active_stakes = cursor.fetchall()
+    
+    for stake in active_stakes:
+        stake_id, user_id, plan_id, amount, currency, start_date, duration_days, last_update, is_expired = stake
+        start_date = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S.%f')
+        last_update = datetime.strptime(last_update, '%Y-%m-%d %H:%M:%S.%f')
+        
+        # چک کردن اتمام مدت استیک (برای پلن‌های محدود)
+        if duration_days:
+            days_passed = (now - start_date).days
+            if days_passed >= duration_days:
+                cursor.execute("UPDATE stakes SET is_expired = 1 WHERE id = ?", (stake_id,))
+                logging.info(f"Stake {stake_id} for user {user_id} expired")
+                continue
+        
+        # محاسبه تعداد روزهایی که از آخرین آپدیت گذشته
+        days_since_last_update = (now - last_update).total_seconds() / (24 * 3600)
+        if days_since_last_update < 1:  # فقط اگه یه روز گذشته باشه
+            continue
+        
+        # درصد سود روزانه بر اساس پلن
+        profit_rates = {
+            1: 0.02,  # Starter 2% Forever
+            2: 0.03,  # Pro 3% Forever
+            3: 0.04,  # Elite 4% Forever
+            4: 0.04,  # 40-Day 4% Daily
+            5: 0.03,  # 60-Day 3% Daily
+            6: 0.025  # 100-Day 2.5% Daily
+        }
+        daily_profit_rate = profit_rates[plan_id]
+        
+        # محاسبه سود برای هر روز از آخرین آپدیت
+        daily_profit = amount * daily_profit_rate
+        total_profit = daily_profit * int(days_since_last_update)
+        
+        # آپدیت earnings کاربر
+        success = await update_earnings(user_id, total_profit, currency)
+        if success:
+            cursor.execute("UPDATE stakes SET last_earning_update = ? WHERE id = ?", (now, stake_id))
+            logging.info(f"Earnings updated for stake {stake_id}: {total_profit:.6f} {currency} for user {user_id}")
+        else:
+            logging.error(f"Failed to update earnings for stake {stake_id}, user {user_id}")
+    
+    conn.commit()
+    conn.close()
+
 async def get_wallet_address(user_id, currency):
     conn = await db_connect()
     if conn:
@@ -647,7 +704,8 @@ async def send_withdrawal_report():
 async def schedule_reports():
     while True:
         await send_withdrawal_report()
-        await asyncio.sleep(43200)
+        await update_stake_earnings()  # اضافه کردن آپدیت سود
+        await asyncio.sleep(43200)  # هر 12 ساعت (برای هماهنگی با گزارش برداشت‌ها)
 
 async def handle_webhook(request):
     signature = request.headers.get("x-nowpayments-sig")
